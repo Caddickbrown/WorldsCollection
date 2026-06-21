@@ -11,6 +11,8 @@
 		4B27BB0DC4EB4573A6A015B5 /* LauncherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7B01AA91414423495308AC3 /* LauncherView.swift */; };
 		87BD01C1AEB14AF39086DECE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F36F855DDE4D63ABA56D21 /* ContentView.swift */; };
 		9CB4A16C73E54FFEB88950B3 /* Games in Resources */ = {isa = PBXBuildFile; fileRef = C36A7F8805354EF9B2D434A6 /* Games */; };
+		21069CCEDA8F49E29C2E27B7 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 2071D8289F304BF089D0E84E /* Info.plist */; };
+		AA200002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA200001 /* Assets.xcassets */; };
 		A6E21700FF5E499BB10D6FD9 /* GameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E920BC8F5E5493A91B8307C /* GameView.swift */; };
 		B8F239DF398D4BCD836A7EDD /* GameDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0692CC1817B4114B5745556 /* GameDefinition.swift */; };
 		D677C6245726416EB3C3F015 /* GameSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C9FE27A222A4601AC2B8139 /* GameSchemeHandler.swift */; };
@@ -27,6 +29,7 @@
 		9E920BC8F5E5493A91B8307C /* GameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameView.swift; sourceTree = "<group>"; };
 		B7B01AA91414423495308AC3 /* LauncherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherView.swift; sourceTree = "<group>"; };
 		C36A7F8805354EF9B2D434A6 /* Games */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Games; sourceTree = "<group>"; };
+		AA200001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D0692CC1817B4114B5745556 /* GameDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameDefinition.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -57,6 +60,7 @@
 			isa = PBXGroup;
 			children = (
 				C36A7F8805354EF9B2D434A6 /* Games */,
+				AA200001 /* Assets.xcassets */,
 				2071D8289F304BF089D0E84E /* Info.plist */,
 			);
 			path = Resources;
@@ -157,6 +161,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				9CB4A16C73E54FFEB88950B3 /* Games in Resources */,
+				AA200002 /* Assets.xcassets in Resources */,
+				21069CCEDA8F49E29C2E27B7 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
