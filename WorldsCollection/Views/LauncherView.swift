@@ -7,7 +7,6 @@ struct LauncherView: View {
     private let games     = allGames.filter { $0.category == .game }
     private let techDemos = allGames.filter { $0.category == .techDemo }
 
-    // Layout
     private let cardWidth:  CGFloat = 200
     private let cardHeight: CGFloat = 140
     private let spacing:    CGFloat = 16
@@ -53,13 +52,27 @@ struct LauncherView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: spacing) {
                     ForEach(items) { game in
-                        GameCard(game: game)
-                            .frame(width: cardWidth, height: cardHeight)
-                            .onTapGesture { activeGame = game }
+                        Button { activeGame = game } label: {
+                            GameCard(game: game)
+                                .frame(width: cardWidth, height: cardHeight)
+                        }
+                        .buttonStyle(CardButtonStyle())
                     }
                 }
+                // Extra padding so last card isn't flush with edge
+                .padding(.trailing, 32)
             }
         }
+    }
+}
+
+// MARK: – Card press style (handles animation without fighting ScrollView)
+
+struct CardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -67,7 +80,6 @@ struct LauncherView: View {
 
 struct GameCard: View {
     let game: GameDefinition
-    @State private var isPressed = false
 
     private var accent: Color {
         Color(hex: game.accentColor) ?? .gray
@@ -83,7 +95,7 @@ struct GameCard: View {
                         .stroke(accent.opacity(0.25), lineWidth: 1)
                 )
 
-            // Faint accent glow in top-right
+            // Faint accent glow top-right
             Circle()
                 .fill(accent.opacity(0.12))
                 .frame(width: 120, height: 120)
@@ -110,13 +122,6 @@ struct GameCard: View {
             }
             .padding(16)
         }
-        .scaleEffect(isPressed ? 0.96 : 1.0)
-        .animation(.easeOut(duration: 0.12), value: isPressed)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded   { _ in isPressed = false }
-        )
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

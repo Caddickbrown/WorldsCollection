@@ -4,14 +4,10 @@ struct ContentView: View {
     @State private var activeGame: GameDefinition? = nil
 
     var body: some View {
-        ZStack {
-            LauncherView(activeGame: $activeGame)
-            if let game = activeGame {
+        LauncherView(activeGame: $activeGame)
+            .fullScreenCover(item: $activeGame) { game in
                 GameView(game: game, onDismiss: { activeGame = nil })
-                    .transition(.opacity)
-                    .zIndex(1)
+                    .ignoresSafeArea()
             }
-        }
-        .animation(.easeInOut(duration: 0.25), value: activeGame?.id)
     }
 }
