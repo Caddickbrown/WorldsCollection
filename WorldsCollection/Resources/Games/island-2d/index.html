@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Island Town</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #1a1a2e; }
+    canvas { display: block; }
+
+    #hud {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 10px 16px;
+      border-radius: 10px;
+      pointer-events: none;
+      line-height: 1.6;
+      backdrop-filter: blur(6px);
+    }
+    #hud .hint {
+      opacity: 0.7;
+      font-size: 12px;
+    }
+
+    #title {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: 'Georgia', serif;
+      font-size: 22px;
+      letter-spacing: 2px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 8px 24px;
+      border-radius: 10px;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+    }
+
+    #map-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      color: #fff;
+      font-family: 'Georgia', serif;
+      font-size: 13px;
+      letter-spacing: 1px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 7px 14px;
+      border-radius: 8px;
+      backdrop-filter: blur(6px);
+      text-decoration: none;
+      opacity: 0.85;
+      transition: opacity 0.15s, background 0.15s;
+      cursor: pointer;
+      border: none;
+    }
+    #map-btn:hover { opacity: 1; background: rgba(0,0,0,0.5); }
+
+    #clock-hud {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-top: 56px;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      letter-spacing: 1px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 5px 14px;
+      border-radius: 8px;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #interact-hint {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 6px 16px;
+      border-radius: 20px;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #greeting-toast {
+      position: fixed;
+      bottom: 160px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: 'Georgia', 'Segoe UI', serif;
+      font-size: 16px;
+      font-style: italic;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 7px 20px;
+      border-radius: 24px;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    #dialogue {
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 420px;
+      width: 90%;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 14px;
+      padding: 16px 20px;
+      pointer-events: none;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+    #dialogue .npc-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    #dialogue .npc-line {
+      font-size: 15px;
+      color: #222;
+      line-height: 1.5;
+    }
+
+    /* ── Map overlay ─────────────────────────────────────────────────────── */
+    #map-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      display: none;
+    }
+    #map-close {
+      position: fixed; bottom: 14px; right: 16px; z-index: 210;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #8a6a3a; cursor: pointer;
+      background: rgba(250,242,221,0.9); padding: 5px 10px;
+      border-radius: 2px; border: 0.5px solid rgba(138,106,58,0.45);
+      transition: opacity 0.15s;
+    }
+    #map-close:hover { background: #faf2dd; }
+
+    /* Atlas styles (scoped to overlay) */
+    :root {
+      --font-display: 'Instrument Serif', Georgia, serif;
+      --font-body:    'Work Sans', system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+      --accent:       #c26e4c;
+    }
+    .atlas-root {
+      display: grid; grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 24px; width: 100%; height: 100%; padding: 24px;
+      background: radial-gradient(ellipse at 20% 10%, #f5e8c2 0%, transparent 55%),
+                  radial-gradient(ellipse at 80% 90%, #eed8a4 0%, transparent 60%),
+                  linear-gradient(160deg, #f0dfb4 0%, #e4cb93 100%);
+      color: #3a2610; font-family: var(--font-body);
+    }
+    .atlas-map-wrap {
+      min-width: 0; min-height: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .atlas-frame {
+      position: relative; width: 100%; height: 100%;
+      background: #f6e7be; border: 1px solid #8a6a3a;
+      box-shadow: inset 0 0 0 8px #f0dfb4, inset 0 0 0 9px #8a6a3a,
+                  0 20px 40px -20px rgba(74,50,20,0.4);
+      padding: 16px; border-radius: 2px;
+    }
+    .atlas-frame::before {
+      content: ''; position: absolute; inset: 0;
+      background: repeating-linear-gradient(92deg, transparent 0 3px, rgba(74,50,20,0.025) 3px 4px),
+                  repeating-linear-gradient(178deg, transparent 0 5px, rgba(74,50,20,0.02) 5px 6px);
+      pointer-events: none; border-radius: 2px;
+    }
+    .atlas-frame__rivets { position: absolute; inset: 4px; pointer-events: none; }
+    .atlas-frame__rivets span {
+      position: absolute; width: 10px; height: 10px;
+      background: radial-gradient(circle at 35% 35%, #d4a853, #8a6a3a 70%, #4a321a 100%);
+      border-radius: 50%; box-shadow: inset 0 -1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.2);
+    }
+    .atlas-frame__rivets span:nth-child(1) { top: 2px; left: 2px; }
+    .atlas-frame__rivets span:nth-child(2) { top: 2px; right: 2px; }
+    .atlas-frame__rivets span:nth-child(3) { bottom: 2px; left: 2px; }
+    .atlas-frame__rivets span:nth-child(4) { bottom: 2px; right: 2px; }
+    .atlas-side { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow: hidden; }
+    .atlas-meta {
+      flex-shrink: 0; display: flex; flex-direction: column; gap: 6px;
+      padding: 14px 16px; background: rgba(255,244,217,0.6);
+      border: 1px solid rgba(138,106,58,0.4); border-radius: 3px;
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; color: #6b4a22;
+    }
+    .atlas-meta__row { display: flex; justify-content: space-between; align-items: center; }
+    .atlas-meta__label { opacity: 0.7; text-transform: uppercase; letter-spacing: 0.1em; }
+    .atlas-meta__val   { color: #3a2610; font-weight: 500; }
+    .atlas-card {
+      flex-shrink: 0; padding: 22px 22px 18px;
+      background: #faf2dd; border: 1px solid #8a6a3a; border-radius: 3px;
+      box-shadow: 0 8px 24px -12px rgba(74,50,20,0.25); position: relative;
+    }
+    .atlas-card::after {
+      content: ''; position: absolute; top: 6px; left: 6px; right: 6px; bottom: 6px;
+      border: 0.5px solid rgba(138,106,58,0.35); pointer-events: none; border-radius: 2px;
+    }
+    .atlas-card__kicker {
+      font-family: var(--font-mono); font-size: 10px; color: #8a6a3a;
+      letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 4px;
+    }
+    .atlas-card__title {
+      font-family: var(--font-display); font-style: italic; font-weight: 400;
+      font-size: 32px; line-height: 1.05; margin: 0 0 10px; color: #2d1d0a;
+    }
+    .atlas-card__blurb { font-size: 13px; line-height: 1.55; color: #5a3e1e; margin: 0 0 16px; }
+    .atlas-card__subhead {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #8a6a3a; padding-bottom: 6px; border-bottom: 0.5px dashed rgba(138,106,58,0.5); margin-bottom: 10px;
+    }
+    .atlas-card__count { font-family: var(--font-display); font-style: italic; font-size: 18px; color: var(--accent); text-transform: none; letter-spacing: 0; }
+    .atlas-empty { font-family: var(--font-display); font-style: italic; color: #8a6a3a; font-size: 14px; padding: 8px 0; }
+    .atlas-here { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .atlas-here li { display: flex; gap: 10px; align-items: flex-start; }
+    .atlas-here__dot { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid #3a2610; margin-top: 3px; }
+    .atlas-here__body { flex: 1; min-width: 0; }
+    .atlas-here__name { font-size: 13px; color: #2d1d0a; font-weight: 500; }
+    .atlas-here__name em { font-family: var(--font-display); font-style: italic; font-weight: 400; color: #6b4a22; }
+    .atlas-here__act { font-size: 11px; color: #8a6a3a; font-family: var(--font-mono); margin-top: 1px; }
+    .atlas-roster {
+      flex: 1; min-height: 0; overflow: auto;
+      background: rgba(255,244,217,0.55); border: 1px solid rgba(138,106,58,0.35);
+      border-radius: 3px; padding: 14px 14px 12px;
+    }
+    .atlas-roster__head { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #8a6a3a; margin-bottom: 10px; }
+    .atlas-roster__grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .atlas-roster__chip {
+      all: unset; cursor: pointer; display: grid;
+      grid-template-columns: 10px 1fr; grid-template-rows: auto auto;
+      column-gap: 7px; row-gap: 1px; padding: 6px 8px;
+      background: rgba(250,242,221,0.6); border: 0.5px solid rgba(138,106,58,0.3);
+      border-radius: 2px; transition: background 0.15s, border-color 0.15s;
+    }
+    .atlas-roster__chip:hover { background: #faf2dd; border-color: #8a6a3a; }
+    .atlas-roster__dot { grid-row: 1 / 3; align-self: center; width: 10px; height: 10px; border-radius: 50%; border: 0.5px solid #3a2610; }
+    .atlas-roster__name { font-size: 12px; color: #2d1d0a; font-weight: 500; }
+    .atlas-roster__act  { font-size: 10px; font-family: var(--font-mono); color: #8a6a3a; }
+    .area-glyph { cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<div id="title">Island Town</div>
+<div id="clock-hud">
+  <span id="clock-time">8:00 AM</span>
+  <span id="clock-phase">☀️</span>
+</div>
+<button id="map-btn" onclick="toggleMap()">🗺 Atlas <span style="opacity:0.55;font-size:11px">[M]</span></button>
+<div id="hud">
+  <div id="pos">Position: 0, 0</div>
+  <div class="hint">WASD to move &middot; Shift to sprint &middot; Space to jump &middot; E to talk &middot; M for map &middot; B for bag &middot; click to lock mouse</div>
+</div>
+<div id="greeting-toast"></div>
+<div id="interact-hint">Press E to talk</div>
+<div id="dialogue">
+  <div class="npc-name" id="dialogue-name"></div>
+  <div class="npc-line" id="dialogue-line"></div>
+</div>
+
+<!-- ── Map overlay ──────────────────────────────────────────────────────── -->
+<div id="map-overlay">
+  <div class="atlas-root">
+    <div class="atlas-map-wrap">
+      <div class="atlas-frame">
+        <div class="atlas-frame__rivets">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <svg id="map-svg" viewBox="-310 -310 620 620" style="width:100%;height:100%;display:block"></svg>
+      </div>
+    </div>
+    <div class="atlas-side" id="side-panel"></div>
+  </div>
+  <button id="map-close" onclick="toggleMap()">✕ close [M / Esc]</button>
+</div>
+
+<script>
+// ── Map toggle ────────────────────────────────────────────────────────────────
+let _mapOpen = false;
+window.toggleMap = function() {
+  _mapOpen = !_mapOpen;
+  document.getElementById('map-overlay').style.display = _mapOpen ? 'block' : 'none';
+  if (_mapOpen) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    renderMap();
+  }
+};
+window.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && _mapOpen) window.toggleMap();
+});
+
+// ── World data ────────────────────────────────────────────────────────────────
+const MAP_AREAS = [
+  { id: 'townSquare', name: 'Town Square',       x:    0, z:    0,   kind: 'civic', blurb: 'The beating heart of the island. Festivals, market days, the sound of the fountain at dusk.' },
+  { id: 'bakery',     name: 'The Bakery',         x:  -60, z:  -40,  kind: 'craft', blurb: "Rosa's ovens fire before dawn. The air smells of cardamom buns and fresh rye." },
+  { id: 'postOffice', name: 'Post Office',        x:   60, z:  -40,  kind: 'civic', blurb: "Letters, parcels, rumour. Theo knows every doorway by heart." },
+  { id: 'cafe',       name: 'The Café',           x:    5, z:  -55,  kind: 'craft', blurb: "Nico pours the island's coffee. The terrace catches the afternoon sun." },
+  { id: 'pub',        name: 'The Anchor',         x:  -30, z:  -70,  kind: 'civic', blurb: "Barney's pub. A fire in the hearth, a pint on the house if you arrive wet." },
+  { id: 'school',     name: 'The Schoolhouse',    x:   40, z:  -70,  kind: 'civic', blurb: "Clara teaches numbers; Rex teaches the river. The bell rings at nine." },
+  { id: 'library',    name: 'The Library',        x:   80, z:   40,  kind: 'civic', blurb: "Marta's kingdom of indexed stories. Armchairs deep enough to vanish into." },
+  { id: 'workshop',   name: 'The Workshop',       x:  -80, z:   40,  kind: 'craft', blurb: "Otto's garage. Solder, sawdust, the half-rebuilt truck that may yet run." },
+  { id: 'farm',       name: 'The Farm',           x: -180, z:   80,  kind: 'rural', blurb: "Eddy and Pete work the terraces. Hens, bees, a windmill that never quite sleeps." },
+  { id: 'forestPath', name: 'Forest Path',        x:  180, z:  120,  kind: 'wild',  blurb: "Old growth. Moss, woodpeckers, a trail that seems longer than the map admits. Jin sketches in the margins." },
+  { id: 'aquarium',   name: "Elliot's Aquarium",  x:  150, z:  -80,  kind: 'civic', blurb: "Fifteen fish in quiet blue light. Elliot hums while he feeds them." },
+  { id: 'clifftops',  name: 'The Clifftops',      x: -100, z: -180,  kind: 'wild',  blurb: "The island's highest point. Wind. The whole town laid out like a pressed leaf." },
+  { id: 'southBeach', name: 'South Beach',        x:    0, z: -220,  kind: 'shore', blurb: "Pale sand, flat water at low tide. Someone's always left a bucket here." },
+  { id: 'beach',      name: 'East Headland',       x:   30, z: -200,  kind: 'shore', blurb: "Rockier, tidal pools, the fishing nets mended in long slow afternoons." },
+  { id: 'eastBeach',  name: 'East Beach',          x:  150, z: -155,  kind: 'shore', blurb: "A secluded stretch around the headland. Tidal pools, no footprints most days." },
+  { id: 'dock',       name: 'The Dock',           x:    0, z:  262,  kind: 'shore', blurb: "Salt-grey planks, Suki's boat, the only way on or off the island." },
+  { id: 'lighthouse', name: 'The Lighthouse',     x:   42, z:  248,  kind: 'shore', blurb: "Lena's domain. The light sweeps through fog and counts out the hours." },
+  { id: 'treehouse',  name: 'The Treehouse',      x:  188, z:  128,  kind: 'wild',  blurb: "Petra's perch high in the canopy. Paint-stained floorboards, above the ordinary world." },
+];
+
+const MAP_NPCS = [
+  { id: 'rosa',     name: 'Rosa',      role: 'Baker',              accent: '#e8a87c', noonArea: 'bakery',     noonAct: 'Selling bread' },
+  { id: 'theo',     name: 'Theo',      role: 'Postman',            accent: '#5b9bd5', noonArea: 'farm',       noonAct: 'Delivering' },
+  { id: 'eddy',     name: 'Eddy',      role: 'Farmer',             accent: '#7bc67e', noonArea: 'farm',       noonAct: 'Farming' },
+  { id: 'olive',    name: 'Olive',     role: 'Shopkeeper',         accent: '#d4a0d4', noonArea: 'townSquare', noonAct: 'Tending shop' },
+  { id: 'marta',    name: 'Marta',     role: 'Librarian',          accent: '#a29bfe', noonArea: 'library',    noonAct: 'Keeping the library' },
+  { id: 'suki',     name: 'Suki',      role: 'Fisherman',          accent: '#c47d52', noonArea: 'townSquare', noonAct: 'Selling catch' },
+  { id: 'pete',     name: 'Pete',      role: 'Farmer',             accent: '#8db87a', noonArea: 'townSquare', noonAct: 'Selling produce' },
+  { id: 'barney',   name: 'Barney',    role: 'Barkeep',            accent: '#d4a853', noonArea: 'pub',        noonAct: 'Preparing lunch' },
+  { id: 'nico',     name: 'Nico',      role: 'Barista',            accent: '#f4c77e', noonArea: 'cafe',       noonAct: 'Making coffee' },
+  { id: 'clara',    name: 'Clara',     role: 'Teacher',            accent: '#74b9e8', noonArea: 'school',     noonAct: 'Teaching' },
+  { id: 'rex',      name: 'Rex',       role: 'Teacher',            accent: '#6ec97b', noonArea: 'school',     noonAct: 'Teaching' },
+  { id: 'otto',     name: 'Otto',      role: 'Engineer',           accent: '#e17055', noonArea: 'workshop',   noonAct: 'Welding' },
+  { id: 'oldwill',  name: 'Old Will',  role: 'Elder',              accent: '#b8a898', noonArea: 'dock',       noonAct: 'Watching the sea' },
+  { id: 'lena',     name: 'Lena',      role: 'Lighthouse keeper',  accent: '#8aaec8', noonArea: 'lighthouse', noonAct: 'Keeping the light' },
+  { id: 'petra',    name: 'Petra',     role: 'Artist',             accent: '#f8b4c8', noonArea: 'cafe',       noonAct: 'Late lunch' },
+  { id: 'jin',      name: 'Jin',       role: 'Botanist',           accent: '#90d48a', noonArea: 'forestPath', noonAct: 'Plant research' },
+  { id: 'newcomer', name: 'Newcomer',  role: 'Visitor',            accent: '#c8c8c8', noonArea: 'cafe',       noonAct: 'First coffee' },
+  { id: 'bea',      name: 'Bea',       role: 'Island child',       accent: '#ffa07a', noonArea: 'beach',      noonAct: 'Collecting things' },
+];
+
+const KIND_LABELS = { civic: 'Civic', craft: 'Craft', rural: 'Rural', wild: 'Wild', shore: 'Shore' };
+const MAP_ACCENT = '#c26e4c';
+let _selectedId = 'townSquare';
+let _hoveredId  = null;
+
+function buildOutline() {
+  const pts = [], R = 250;
+  const seed = [0.02,-0.04,0.06,-0.03,0.08,-0.05,0.03,-0.07,0.05,-0.02,0.04,-0.06,0.07,-0.03,0.02,-0.05,0.06,-0.04,0.05,-0.02,0.08,-0.06,0.03,-0.04];
+  for (let i = 0; i < 48; i++) {
+    const t = (i / 48) * Math.PI * 2;
+    let wobble = seed[i % seed.length] * 30;
+    if (Math.abs(t - Math.PI / 2) < 0.4)     wobble -= 18;
+    if (Math.abs(t - 3 * Math.PI / 2) < 0.3) wobble += 14;
+    pts.push({ x: Math.cos(t) * (R + wobble), z: Math.sin(t) * (R + wobble) });
+  }
+  return pts;
+}
+function smoothPath(pts) {
+  const p = pts.map(pt => ({ x: pt.x, y: pt.z }));
+  let d = `M ${p[0].x.toFixed(2)} ${p[0].y.toFixed(2)}`;
+  for (let i = 0; i < p.length; i++) {
+    const p0 = p[(i-1+p.length)%p.length], p1=p[i], p2=p[(i+1)%p.length], p3=p[(i+2)%p.length];
+    const c1x=p1.x+(p2.x-p0.x)/6, c1y=p1.y+(p2.y-p0.y)/6, c2x=p2.x-(p3.x-p1.x)/6, c2y=p2.y-(p3.y-p1.y)/6;
+    d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+  return d + ' Z';
+}
+const COAST_D = smoothPath(buildOutline());
+
+const NPC_POS = MAP_NPCS.map((n, i) => {
+  const area = MAP_AREAS.find(a => a.id === n.noonArea) || MAP_AREAS[0];
+  const ang = (i * 2.399) % (Math.PI * 2);
+  const r = 10 + (i % 4) * 3;
+  return { x: area.x + Math.cos(ang) * r, z: area.z + Math.sin(ang) * r };
+});
+
+const MAP_PATHS = [
+  [[0,0],[-60,-40]], [[0,0],[60,-40]], [[0,0],[80,40]], [[0,0],[-80,40]],
+  [[0,0],[0,262]],   [[-80,40],[-180,80]], [[80,40],[180,120]],
+  [[-60,-40],[-100,-180]], [[60,-40],[0,-220]], [[-60,-40],[0,-220]],
+  [[-60,-40],[60,-40]], [[-80,40],[80,40]], [[60,-40],[150,-80]],
+  [[5,-55],[40,-70]], [[5,-55],[-30,-70]], [[0,-220],[30,-200]],
+  [[0,262],[42,248]], [[80,40],[188,128]], [[150,-80],[150,-155]],
+];
+
+function glyphSVG(kind, sz, fill, s, sw) {
+  switch(kind) {
+    case 'civic':  return `<polygon points="0,${-(sz+2)} ${sz},0 ${-sz},0" fill="${fill}" stroke="${s}" stroke-width="${sw}"/><rect x="${-sz*0.8}" y="0" width="${sz*1.6}" height="${sz*0.9}" fill="${fill}" stroke="${s}" stroke-width="${sw}"/>`;
+    case 'craft':  return `<rect x="${-sz}" y="${-sz}" width="${sz*2}" height="${sz*2}" fill="${fill}" stroke="${s}" stroke-width="${sw}"/><line x1="${-sz}" y1="0" x2="${sz}" y2="0" stroke="${s}" stroke-width="0.4"/>`;
+    case 'rural':  return `<polygon points="0,${-(sz+1.5)} ${sz+1},${sz-1} ${-(sz+1)},${sz-1}" fill="${fill}" stroke="${s}" stroke-width="${sw}"/>`;
+    case 'wild':   return `<circle r="${sz}" fill="${fill}" stroke="${s}" stroke-width="${sw}"/><circle r="${sz*0.4}" fill="${s}" opacity="0.4"/>`;
+    case 'shore':  return `<path d="M ${-sz} 0 Q ${-sz/2} ${-sz} 0 0 Q ${sz/2} ${sz} ${sz} 0" fill="none" stroke="${s}" stroke-width="${sw+0.2}"/><circle cy="${-sz*0.3}" r="1" fill="${s}"/>`;
+    default:       return `<circle r="${sz}" fill="${fill}" stroke="${s}" stroke-width="${sw}"/>`;
+  }
+}
+
+function buildMapSVG() {
+  const forest = Array.from({length:40},(_,i)=>{const a=(i*0.717)%(Math.PI*2),r=25+(i%5)*7;return `<circle cx="${(180+Math.cos(a)*r).toFixed(1)}" cy="${(120+Math.sin(a)*r).toFixed(1)}" r="2.2" fill="#5a7a45" opacity="0.7"/>`;}).join('');
+  const furrows = Array.from({length:6},(_,i)=>`<line x1="-210" y1="${60+i*7}" x2="-150" y2="${60+i*7}" stroke="#6b8a4a" stroke-width="1" opacity="0.45"/>`).join('');
+  const seaRings = [290,310,335,365].map((r,i)=>`<circle cx="0" cy="0" r="${r}" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.6"${i%2?' stroke-dasharray="2 3"':''} filter="url(#ink-wobble)"/>`).join('');
+  const topo = [60,45,30,18].map((r,i)=>`<circle cx="-100" cy="-180" r="${r}" fill="none" stroke="rgba(74,50,20,0.35)" stroke-width="0.5"${i%2?' stroke-dasharray="3 2"':''} filter="url(#ink-wobble)"/>`).join('');
+  const paths = MAP_PATHS.map(p=>`<line x1="${p[0][0]}" y1="${p[0][1]}" x2="${p[1][0]}" y2="${p[1][1]}" stroke="#6b4a22" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.55" filter="url(#ink-wobble)"/>`).join('');
+  const npcDots = MAP_NPCS.map((n,i)=>{const p=NPC_POS[i];return `<g transform="translate(${p.x.toFixed(1)},${p.z.toFixed(1)})"><circle r="3.2" fill="rgba(44,26,10,0.35)" transform="translate(0.5,0.8)"/><circle r="2.8" fill="${n.accent}" stroke="#3a2610" stroke-width="0.5"/></g>`;}).join('');
+  const glyphs = MAP_AREAS.map(a=>{
+    const isSel=a.id===_selectedId, isHov=a.id===_hoveredId;
+    const sz=isSel?7:isHov?6:5, fill=isSel?MAP_ACCENT:'#faf2dd', lop=(isSel||isHov)?1:0.85;
+    return `<g class="area-glyph" data-id="${a.id}" transform="translate(${a.x},${a.z})">${isSel?`<circle r="${sz+5}" fill="none" stroke="${MAP_ACCENT}" stroke-width="1.2" opacity="0.8"/>`:''}${glyphSVG(a.kind,sz,fill,'#3a2610',0.9)}<g transform="translate(0,${sz+9})" opacity="${lop}"><text text-anchor="middle" font-size="7.5" fill="#2d1d0a" font-family="'Instrument Serif',Georgia,serif" font-style="italic" style="paint-order:stroke;stroke:rgba(239,224,184,0.95);stroke-width:2.5;stroke-linejoin:round">${a.name}</text></g></g>`;
+  }).join('');
+  const compassLines = [0,45,90,135,180,225,270,315].map(deg=>{const rad=deg*Math.PI/180;return `<line x1="0" y1="0" x2="${(Math.sin(rad)*34).toFixed(2)}" y2="${(-Math.cos(rad)*34).toFixed(2)}" stroke="#8a6a3a" stroke-width="${deg%90===0?'0.9':'0.3'}"/>`;}).join('');
+
+  document.getElementById('map-svg').innerHTML = `
+    <defs>
+      <filter id="ink-wobble"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="1.6"/></filter>
+      <filter id="parchment-grain"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="2"/><feColorMatrix values="0 0 0 0 0.35  0 0 0 0 0.25  0 0 0 0 0.15  0 0 0 0.14 0"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+      <filter id="softGlow"><feGaussianBlur stdDeviation="2"/></filter>
+      <radialGradient id="seaGrad" cx="50%" cy="50%" r="75%"><stop offset="0%" stop-color="#9cbfb2"/><stop offset="60%" stop-color="#7aa396"/><stop offset="100%" stop-color="#5a8578"/></radialGradient>
+      <radialGradient id="landGrad" cx="45%" cy="40%" r="70%"><stop offset="0%" stop-color="#efe0b8"/><stop offset="55%" stop-color="#e5d09e"/><stop offset="100%" stop-color="#c9ae7b"/></radialGradient>
+      <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="rgba(74,50,20,0.08)" stroke-width="0.6"/></pattern>
+      <clipPath id="landClip"><path d="${COAST_D}"/></clipPath>
+    </defs>
+    <rect x="-310" y="-310" width="620" height="620" fill="url(#seaGrad)"/>
+    ${seaRings}
+    <path d="${COAST_D}" transform="translate(4,6)" fill="rgba(44,26,10,0.25)" filter="url(#softGlow)"/>
+    <path d="${COAST_D}" fill="none" stroke="#eed9a8" stroke-width="12" stroke-linejoin="round" opacity="0.9"/>
+    <path d="${COAST_D}" fill="url(#landGrad)" filter="url(#ink-wobble)"/>
+    <path d="${COAST_D}" fill="none" stroke="#4a321a" stroke-width="1.5" filter="url(#ink-wobble)"/>
+    <g clip-path="url(#landClip)">
+      <rect x="-300" y="-300" width="600" height="600" fill="url(#hatch)"/>
+      ${topo}
+      <text x="-100" y="-188" font-size="7" fill="#4a321a" text-anchor="middle" font-family="'JetBrains Mono',monospace" opacity="0.55">▲ 78m</text>
+      ${forest}${furrows}
+      <ellipse cx="0"  cy="-220" rx="35" ry="10" fill="#f4e3b0" opacity="0.8"/>
+      <ellipse cx="30" cy="-200" rx="22" ry="8"  fill="#f4e3b0" opacity="0.7"/>
+      <ellipse cx="150" cy="-155" rx="18" ry="7" fill="#f4e3b0" opacity="0.6"/>
+      ${paths}
+    </g>
+    ${npcDots}
+    ${glyphs}
+    <g transform="translate(240,240)">
+      <circle r="40" fill="rgba(60,40,16,0.05)" stroke="#8a6a3a" stroke-width="0.5"/>
+      <circle r="34" fill="none" stroke="#8a6a3a" stroke-width="0.3"/>
+      ${compassLines}
+      <polygon points="0,-36 4,-6 0,0 -4,-6" fill="#b68a4a" stroke="#6e4c20" stroke-width="0.4"/>
+      <polygon points="0,36 4,6 0,0 -4,6" fill="#4a321a"/>
+      <text y="-44" text-anchor="middle" font-size="9" fill="#4a321a" font-family="'Instrument Serif',Georgia,serif" font-style="italic">N</text>
+    </g>
+    <g transform="translate(-290,232)">
+      <rect x="0" y="0" width="164" height="58" rx="2" fill="rgba(239,224,184,0.88)" stroke="#6b4a22" stroke-width="0.4" filter="url(#ink-wobble)"/>
+      <text x="82" y="20" text-anchor="middle" font-size="13" font-family="'Instrument Serif',Georgia,serif" font-style="italic" fill="#3a2610">The Island</text>
+      <text x="82" y="35" text-anchor="middle" font-size="6" font-family="'JetBrains Mono',monospace" fill="#6b4a22" letter-spacing="1.2">SURVEY · 1:400</text>
+      <text x="82" y="48" text-anchor="middle" font-size="5" font-family="'JetBrains Mono',monospace" fill="#6b4a22" letter-spacing="1">DRAFT · GOLDEN-HOUR EDITION</text>
+    </g>
+    <rect x="-310" y="-310" width="620" height="620" fill="rgba(0,0,0,0)" filter="url(#parchment-grain)" pointer-events="none"/>
+  `;
+  document.querySelectorAll('.area-glyph').forEach(g => {
+    g.addEventListener('mouseenter', () => { _hoveredId = g.dataset.id; buildMapSVG(); buildMapPanel(); });
+    g.addEventListener('mouseleave', () => { _hoveredId = null; buildMapSVG(); buildMapPanel(); });
+    g.addEventListener('click',      () => { _selectedId = g.dataset.id; buildMapSVG(); buildMapPanel(); });
+  });
+}
+
+function buildMapPanel() {
+  const area = MAP_AREAS.find(a => a.id === (_selectedId || _hoveredId)) || MAP_AREAS[0];
+  const here = MAP_NPCS.filter(n => n.noonArea === area.id);
+  const kLabel = KIND_LABELS[area.kind] || area.kind;
+  const cX = area.x >= 0 ? `+${area.x}` : String(area.x);
+  const cZ = area.z >= 0 ? `+${area.z}` : String(area.z);
+  const regularsHTML = here.length === 0
+    ? `<div class="atlas-empty">— quiet —</div>`
+    : `<ul class="atlas-here">${here.map(n=>`<li><span class="atlas-here__dot" style="background:${n.accent}"></span><div class="atlas-here__body"><div class="atlas-here__name">${n.name} <em>the ${n.role}</em></div><div class="atlas-here__act">${n.noonAct}</div></div></li>`).join('')}</ul>`;
+  const rosterHTML = MAP_NPCS.map(n=>`<button class="atlas-roster__chip" data-area="${n.noonArea}"><span class="atlas-roster__dot" style="background:${n.accent}"></span><span class="atlas-roster__name">${n.name}</span><span class="atlas-roster__act">${n.noonAct}</span></button>`).join('');
+  document.getElementById('side-panel').innerHTML = `
+    <div class="atlas-meta">
+      <div class="atlas-meta__row"><span class="atlas-meta__label">Coord</span><span class="atlas-meta__val">${cX}, ${cZ}</span></div>
+      <div class="atlas-meta__row"><span class="atlas-meta__label">Region</span><span class="atlas-meta__val">${kLabel}</span></div>
+    </div>
+    <div class="atlas-card">
+      <div class="atlas-card__kicker">Field Notes — ${kLabel}</div>
+      <h2 class="atlas-card__title">${area.name}</h2>
+      <p class="atlas-card__blurb">${area.blurb}</p>
+      <div class="atlas-card__subhead"><span>Regulars</span><span class="atlas-card__count">${here.length}</span></div>
+      ${regularsHTML}
+    </div>
+    <div class="atlas-roster">
+      <div class="atlas-roster__head">Roster · all ${MAP_NPCS.length}</div>
+      <div class="atlas-roster__grid">${rosterHTML}</div>
+    </div>`;
+  document.querySelectorAll('.atlas-roster__chip').forEach(chip => {
+    chip.addEventListener('click', () => { _selectedId = chip.dataset.area; buildMapSVG(); buildMapPanel(); });
+  });
+}
+
+function renderMap() { buildMapSVG(); buildMapPanel(); }
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "worlds://island-2d/vendor/three/three.module.js",
+    "three/addons/postprocessing/EffectComposer.js": "worlds://island-2d/vendor/three/postprocessing/EffectComposer.js",
+    "three/addons/postprocessing/RenderPass.js": "worlds://island-2d/vendor/three/postprocessing/RenderPass.js",
+    "three/addons/postprocessing/UnrealBloomPass.js": "worlds://island-2d/vendor/three/postprocessing/UnrealBloomPass.js"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { buildScene, AREAS, initEconomy, tryPickupItem, tryGiveItem,
+           updateSupplyChain, updateRadio, toggleRadio, isNearBoombox,
+           updateNotification, showNotification,
+           createCafeHelpMiniGame } from './scene.js';
+  import { PlayerController } from './player.js';
+  import { NPCManager, findOpenShift, startSubInShift, updateSubIn, subInGratitude, updateIslandSystems, getEnergyStatus, getLowEnergyDialogue } from './npcs.js';
+  import { WildlifeManager } from './wildlife.js';
+  import { AnimalManager } from './animals.js';
+  import { BakeryMinigame }  from './minigame_bakery.js';
+  import { FishingMinigame } from './minigame_fishing.js';
+  import { PubMinigame }     from './minigame_pub.js';
+  import { SchoolMinigame }  from './minigame_school.js';
+  import { KartMinigame }    from './minigame_kart.js';
+  import { BAG, ITEMS, initBagUI } from './bag.js';
+  import { initRelationships, recordTalk, recordGift, recordSubIn, getRelationship, getLevel, updateGiftPrompt, hideGiftPrompt, getGiftReaction } from './relationships.js';
+  import { initNPCMemory, addMemory, getMemoryDialogue } from './npc_memory.js';
+  import { initJournal, addEntry, hasEntry } from './journal.js';
+  import { checkMilestoneScene, initMilestones } from './milestones.js';
+  import { initJobProgression, getDifficulty, recordCompletion } from './job_progression.js';
+  import { BeachcombingManager } from './beachcombing.js';
+  import { initBeaCollection, beaWantsItem, giveItemToBea, getBeaCollectionDialogue } from './bea_collection.js';
+  import { initEvents, updateEvents, isStormActive, isAreaClosedByStorm, getStormDialogue, isMarketDay, getMarketDialogue, isProjectActive, getProjectDialogue, startProject, contributeToProject } from './events.js';
+  import { initSaveSystem, saveGame, loadGame, tickAutoSave, updateSaveHUD } from './save.js';
+  import { initSleep, isNearBed, sleep, isSleeping, updateSleep } from './sleep.js';
+  import { CafeMinigame } from './minigame_cafe.js';
+  import { PostOfficeMinigame } from './minigame_postoffice.js';
+  import { initRadioStation, toggleRadioStation, updateRadioStation } from './radio.js';
+
+  // --- Renderer ---
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  document.body.appendChild(renderer.domElement);
+
+  // --- Scene ---
+  const scene = new THREE.Scene();
+
+  // Sky gradient — warm golden-hour feel
+  const skyCanvas = document.createElement('canvas');
+  skyCanvas.width = 1;
+  skyCanvas.height = 256;
+  const skyCtx = skyCanvas.getContext('2d');
+  const grad = skyCtx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#7ec8e3');    // top — soft blue
+  grad.addColorStop(0.5, '#c9e8f5');  // mid — light
+  grad.addColorStop(0.85, '#fde8c9'); // warm peach
+  grad.addColorStop(1, '#f0a868');    // horizon — golden
+  skyCtx.fillStyle = grad;
+  skyCtx.fillRect(0, 0, 1, 256);
+  const skyTexture = new THREE.CanvasTexture(skyCanvas);
+  skyTexture.magFilter = THREE.LinearFilter;
+  scene.background = skyTexture;
+
+  // Fog for cosy atmosphere
+  scene.fog = new THREE.FogExp2(0xd4e8f0, 0.0015);
+
+  // --- Camera ---
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 1500);
+
+  // --- Post-processing ---
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.18,   // strength — very subtle, only emissive surfaces
+    0.6,    // radius
+    0.94    // threshold — only campfire/lighthouse/lamp level brightness
+  );
+  composer.addPass(bloomPass);
+
+  // --- Build world ---
+  const { windmill, clouds, campfire, colliders, fish, boombox, fireflies, sea, sunLight, hemiLight, ambientLight, buildings } = buildScene(scene);
+
+  // --- Player ---
+  const playerCtrl = new PlayerController(scene, camera, renderer);
+  playerCtrl.setColliders(colliders);
+
+  // --- Economy ---
+  initEconomy();
+
+  // --- Café Help Mini-Game (CAD-269) ---
+  playerCtrl.miniGame = createCafeHelpMiniGame();
+
+  // --- Building Minigames ---
+  // Each keyed to the buildingKey in INTERIOR_ZONES
+  const _bakeryGame  = new BakeryMinigame(scene, camera);
+  const _fishingGame = new FishingMinigame(scene, camera);
+  const _pubGame     = new PubMinigame();
+  const _schoolGame  = new SchoolMinigame();
+  const _cafeGame = new CafeMinigame();
+  const _postOfficeGame = new PostOfficeMinigame();
+  const BUILDING_MINIGAMES = {
+    bakery:     _bakeryGame,
+    pub:        _pubGame,
+    school:     _schoolGame,
+    cafe:       _cafeGame,
+    postOffice: _postOfficeGame,
+  };
+  // Fishing is triggered at the dock (location-based)
+  const FISHING_TRIGGER = { x: 0, z: 370, radius: 18 };
+  // Kart race is triggered near the kart track (location-based)
+  const _kartGame = new KartMinigame();
+  const KART_TRIGGER = { x: 297, z: -222, radius: 25 };
+
+  // --- The Bag (Inventory) ---
+  initBagUI();
+
+  // --- New Systems (CAD-393 to CAD-405) ---
+  initRelationships();
+  initNPCMemory();
+  initJournal();
+  initMilestones();
+  initJobProgression();
+  initBeaCollection();
+  initEvents();
+  initSaveSystem();
+  initSleep();
+  initRadioStation();
+
+  // --- NPCs ---
+  const npcManager = new NPCManager(scene);
+
+  // --- Wildlife ---
+  const wildlifeManager = new WildlifeManager(scene);
+
+  // --- Farm animals & apiary ---
+  const animalManager = new AnimalManager(scene);
+
+  // --- Beachcombing (CAD-400) ---
+  const beachcombingManager = new BeachcombingManager(scene);
+
+  // --- HUD ---
+  const posEl = document.getElementById('pos');
+  const titleEl = document.getElementById('title');
+  const interactHint = document.getElementById('interact-hint');
+  const dialogueBox = document.getElementById('dialogue');
+  const dialogueName = document.getElementById('dialogue-name');
+  const dialogueLine = document.getElementById('dialogue-line');
+  const greetingToast = document.getElementById('greeting-toast');
+  const clockTimeEl = document.getElementById('clock-time');
+  const clockPhaseEl = document.getElementById('clock-phase');
+
+  // --- Day/night cycle ---
+  // 1 real second = 3 game minutes (full day ~8 real minutes). Start at 8:00 AM.
+  let gameHour = 8.0;
+
+  // CAD-442: Restore from save if available
+  {
+    const _sv = loadGame();
+    if (_sv) {
+      gameHour = _sv.gameHour;
+      if (_sv.playerPos) {
+        playerCtrl.player.position.set(_sv.playerPos.x, _sv.playerPos.y, _sv.playerPos.z);
+      }
+    }
+  }
+
+  // Colour keyframes: [hour, skyHex, groundHex, ambientHex, sunHex, sunIntensity, fogHex, ambientIntensity]
+  const dayPhases = [
+    { h:  0, sky: 0x06071a, gnd: 0x030410, amb: 0x0d0e2a, sun: 0x111133, si: 0.0,  fog: 0x06070f, ai: 0.06 },
+    { h:  5, sky: 0x150d2e, gnd: 0x080814, amb: 0x1a1030, sun: 0x221133, si: 0.0,  fog: 0x090710, ai: 0.08 },
+    { h:  6, sky: 0xe87040, gnd: 0x3a1a10, amb: 0xd4885a, sun: 0xff8833, si: 0.55, fog: 0xd06040, ai: 0.40 },
+    { h:  8, sky: 0x6aa8d8, gnd: 0x7ab8d4, amb: 0xd4e8f0, sun: 0xfff0d8, si: 0.95, fog: 0x9ec8e8, ai: 0.60 },
+    { h: 12, sky: 0x4a8fc8, gnd: 0x6aaec8, amb: 0xe8f4ff, sun: 0xfff8e8, si: 1.1,  fog: 0x88bce0, ai: 0.65 },
+    { h: 17, sky: 0xe8a855, gnd: 0x7a9eb8, amb: 0xf0c880, sun: 0xffaa44, si: 0.85, fog: 0xe8b06a, ai: 0.60 },
+    { h: 19, sky: 0xc04820, gnd: 0x341810, amb: 0xd06030, sun: 0xff4400, si: 0.40, fog: 0xb03818, ai: 0.30 },
+    { h: 20, sky: 0x14142e, gnd: 0x08080e, amb: 0x1a1a38, sun: 0x0a0a22, si: 0.04, fog: 0x0c0c20, ai: 0.12 },
+    { h: 24, sky: 0x06071a, gnd: 0x030410, amb: 0x0d0e2a, sun: 0x111133, si: 0.0,  fog: 0x06070f, ai: 0.06 },
+  ];
+
+  function lerpColour(a, b, t) {
+    const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+    const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+    return ((Math.round(ar + (br-ar)*t) << 16) | (Math.round(ag + (bg-ag)*t) << 8) | Math.round(ab + (bb-ab)*t));
+  }
+
+  function getDayPhase(hour) {
+    const h = ((hour % 24) + 24) % 24;
+    let lo = dayPhases[0], hi = dayPhases[dayPhases.length - 1];
+    for (let i = 0; i < dayPhases.length - 1; i++) {
+      if (h >= dayPhases[i].h && h < dayPhases[i+1].h) { lo = dayPhases[i]; hi = dayPhases[i+1]; break; }
+    }
+    const t = (h - lo.h) / (hi.h - lo.h);
+    return {
+      sky: lerpColour(lo.sky, hi.sky, t),
+      gnd: lerpColour(lo.gnd, hi.gnd, t),
+      amb: lerpColour(lo.amb, hi.amb, t),
+      sun: lerpColour(lo.sun, hi.sun, t),
+      si:  lo.si + (hi.si - lo.si) * t,
+      fog: lerpColour(lo.fog, hi.fog, t),
+      ai:  lo.ai + (hi.ai - lo.ai) * t,
+    };
+  }
+
+  function updateDayNight(gameHr) {
+    const ph = getDayPhase(gameHr);
+    if (hemiLight)   { hemiLight.color.setHex(ph.sky); hemiLight.groundColor.setHex(ph.gnd); }
+    if (ambientLight){ ambientLight.color.setHex(ph.amb); ambientLight.intensity = ph.ai; }
+    if (sunLight) {
+      // Sun arcs east→west: angle 0 = sunrise (6am), PI = sunset (18pm)
+      const sunAngle = ((gameHr - 6) / 12) * Math.PI;
+      sunLight.position.set(
+        Math.cos(sunAngle) * 350,
+        Math.sin(sunAngle) * 280 + 20,
+        100
+      );
+      sunLight.color.setHex(ph.sun);
+      sunLight.intensity = ph.si;
+    }
+    if (scene.fog) scene.fog.color.setHex(ph.fog);
+    scene.background = new THREE.Color(ph.sky);
+    // Sea night blend — dark from 20:00→06:00, day from 08:00→18:00
+    if (sea) {
+      const hr = ((gameHr % 24) + 24) % 24;
+      let nightBlend = 0;
+      if (hr >= 20 || hr < 5)       nightBlend = 1.0;
+      else if (hr >= 5 && hr < 8)   nightBlend = 1.0 - (hr - 5) / 3;
+      else if (hr >= 18 && hr < 20) nightBlend = (hr - 18) / 2;
+      sea.material.uniforms.uNightBlend.value = nightBlend;
+    }
+    // Fireflies glow at night (visible 19:00–06:00)
+    if (fireflies) {
+      const nighttime = gameHr >= 19 || gameHr < 6;
+      const twi = gameHr >= 18 && gameHr < 20 ? (gameHr - 18) / 2 : (gameHr >= 5 && gameHr < 7 ? 1 - (gameHr - 5) / 2 : nighttime ? 1 : 0);
+      fireflies.material.opacity = twi * 0.8;
+    }
+  }
+
+  function formatGameTime(h) {
+    const totalMins = Math.floor(((h % 24) + 24) % 24 * 60);
+    const hr = Math.floor(totalMins / 60);
+    const min = totalMins % 60;
+    const ampm = hr < 12 ? 'AM' : 'PM';
+    const disp = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+    return `${disp}:${String(min).padStart(2, '0')} ${ampm}`;
+  }
+
+  function getPhaseEmoji(h) {
+    const hr = ((h % 24) + 24) % 24;
+    if (hr >= 5  && hr < 7)  return '🌅';
+    if (hr >= 7  && hr < 17) return '☀️';
+    if (hr >= 17 && hr < 20) return '🌇';
+    return '🌙';
+  }
+
+  // Build area list once for nearest-area lookup
+  const areaList = Object.values(AREAS); // [{x, z, label}, ...]
+  let lastAreaLabel = '';
+
+  function getNearestArea(px, pz) {
+    let nearest = areaList[0];
+    let nearestDist = Infinity;
+    for (const area of areaList) {
+      const d = Math.sqrt((px - area.x) ** 2 + (pz - area.z) ** 2);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = area;
+      }
+    }
+    return nearest.label;
+  }
+
+  // --- Interaction state ---
+  const INTERACT_RADIUS = 8;
+  let nearbyNPC = null;
+  let lastNearbyNPC = null;
+  let dialogueTimer = 0;
+  let greetingTimer = 0;
+  const DIALOGUE_DURATION = 5;
+
+  // --- Interior zone detection ---
+  // buildingKey matches the key in the buildings object returned by buildScene()
+  const INTERIOR_ZONES = [
+    { cx:   8, cz:  -83, hw: 8,  hd: 7,  label: 'café',        buildingKey: 'cafe'       },
+    { cx: -90, cz:  -60, hw: 10, hd: 8,  label: 'bakery',      buildingKey: 'bakery'     },
+    { cx:  90, cz:  -60, hw: 8,  hd: 7,  label: 'post office', buildingKey: 'postOffice' },
+    { cx:  60, cz: -105, hw: 9,  hd: 7,  label: 'school',      buildingKey: 'school'     },
+    { cx: 120, cz:   60, hw: 9,  hd: 7,  label: 'library',     buildingKey: 'library'    },
+    { cx: -45, cz: -105, hw: 8,  hd: 6,  label: 'pub',         buildingKey: 'pub'        },
+    { cx: -120,cz:   60, hw: 11, hd: 10, label: 'workshop',    buildingKey: 'workshop'   },
+  ];
+
+  // Wire building groups to zones after buildScene() runs
+  for (const zone of INTERIOR_ZONES) {
+    zone._group = buildings && buildings[zone.buildingKey] || null;
+  }
+
+  let insideBuilding = null;
+
+  function checkInteriorZone(playerPos) {
+    for (const z of INTERIOR_ZONES) {
+      if (Math.abs(playerPos.x - z.cx) < z.hw && Math.abs(playerPos.z - z.cz) < z.hd) {
+        return z;
+      }
+    }
+    return null;
+  }
+
+  // --- Game loop ---
+  const clock = new THREE.Clock();
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const delta = Math.min(clock.getDelta(), 0.1); // cap delta to avoid jumps
+
+    playerCtrl.update(delta);
+
+    // Interior zone — hide building roof when inside, normal camera throughout
+    const zone = checkInteriorZone(playerCtrl.player.position);
+    if (zone !== insideBuilding) {
+      // Restore previous building's roof
+      if (insideBuilding && insideBuilding._group) {
+        const rm = insideBuilding._group.userData.roofMesh;
+        if (rm) rm.visible = true;
+      }
+      insideBuilding = zone;
+      // Hide new building's roof
+      if (insideBuilding && insideBuilding._group) {
+        const rm = insideBuilding._group.userData.roofMesh;
+        if (rm) rm.visible = false;
+      }
+    }
+    // Overhead camera + roof hide together for best interior visibility
+    playerCtrl.indoorCamera = !!insideBuilding;
+    if (insideBuilding) {
+      camera.position.set(insideBuilding.cx, 22, insideBuilding.cz);
+      camera.lookAt(insideBuilding.cx, 0, insideBuilding.cz);
+      camera.up.set(0, 0, -1);
+    } else {
+      camera.up.set(0, 1, 0);
+    }
+    if (playerCtrl.miniGame && playerCtrl.miniGame.update) {
+      playerCtrl.miniGame.update(delta, playerCtrl.player.position);
+    }
+    // Update building minigames
+    for (const game of Object.values(BUILDING_MINIGAMES)) {
+      if (game.active && game.update) game.update(delta);
+    }
+    if (_fishingGame.active && _fishingGame.update) _fishingGame.update(delta);
+    if (_kartGame.active && _kartGame.update) _kartGame.update(delta);
+    npcManager.update(delta, playerCtrl.player.position);
+    wildlifeManager.update(delta);
+    animalManager.update(delta);
+    beachcombingManager.update(delta);
+    updateEvents(delta, gameHour);
+
+    // Sim time scalar: 1 real second = 3 game minutes (full day ~8 real minutes)
+    const simDelta = delta / 20;
+    if (!isSleeping()) {
+      gameHour = (gameHour + simDelta) % 24;
+    }
+    updateDayNight(gameHour);
+    clockTimeEl.textContent = formatGameTime(gameHour);
+    clockPhaseEl.textContent = getPhaseEmoji(gameHour);
+    updateSupplyChain(delta, simDelta);
+    updateRadio(delta);
+    updateNotification(delta);
+    // CAD-442: auto-save and HUD
+    tickAutoSave(simDelta, gameHour, playerCtrl.player.position);
+    updateSaveHUD(delta);
+    // CAD-443: sleep
+    updateSleep(delta);
+    // CAD-447: radio
+    updateRadioStation(delta, gameHour, isStormActive(), isMarketDay());
+    // CAD-451: timed wildlife
+    wildlifeManager.setGameHour(gameHour);
+    // CAD-436: Update island energy system each tick
+    const dayFraction = gameHour / 24;
+    const weather = isStormActive() ? 'stormy' : 'clear';
+    updateIslandSystems(delta, dayFraction, weather);
+
+    // Sub-in shift completion check (CAD-399: relationship bump on completion)
+    const subInResult = updateSubIn(delta);
+    if (subInResult) {
+      showNotification(subInResult);
+      // Relationship bump for the NPC whose shift was covered
+      for (const name of Object.keys(subInGratitude)) {
+        recordSubIn(name);
+        addMemory(name, 'subin', {});
+      }
+    }
+
+    // Windmill blade rotation
+    if (windmill?.userData?.spinner) {
+      windmill.userData.spinner.rotation.z += 0.55 * delta;
+    }
+
+    // Campfire flicker — scale + sway flames, vary light intensity
+    if (campfire?.userData?.flames) {
+      const ft = clock.getElapsedTime();
+      const flicker = 0.9 + Math.sin(ft * 9.1) * 0.07 + Math.sin(ft * 13.7) * 0.04;
+      campfire.userData.flames.scale.setScalar(flicker);
+      campfire.userData.flames.position.x = Math.sin(ft * 7.3) * 0.04;
+      campfire.userData.flames.position.z = Math.sin(ft * 5.9) * 0.04;
+      if (campfire.userData.fireLight) {
+        campfire.userData.fireLight.intensity = 1.8 + Math.sin(ft * 11.0) * 0.4 + Math.sin(ft * 7.0) * 0.2;
+      }
+    }
+
+    // Firefly animation
+    if (fireflies) fireflies.material.uniforms.uTime.value = clock.getElapsedTime();
+
+    // Sea shader time
+    if (sea) sea.material.uniforms.uTime.value = clock.getElapsedTime();
+
+    // Fish swim — lazy elliptical orbits, tail wag, face direction of travel
+    for (const f of fish) {
+      const d = f.userData;
+      d.t += delta * d.spd;
+      const t = d.t;
+      const nx = d.hx + Math.sin(t          ) * d.rX;
+      const ny = d.hy + Math.sin(t * 0.53 + d.phase * 0.7) * d.rY;
+      const nz = d.hz + Math.cos(t          ) * d.rZ;
+      f.position.set(nx, ny, nz);
+      // Velocity xz → facing angle
+      const vx = Math.cos(t) * d.rX;
+      const vz = -Math.sin(t) * d.rZ;
+      f.rotation.y = Math.atan2(vx, vz);
+      // Tail wag side-to-side
+      d.tail.rotation.y = Math.sin(t * 7) * 0.40;
+    }
+
+    // Cloud drift
+    for (const cloud of clouds) {
+      cloud.position.x += cloud.userData.vx * delta;
+      cloud.position.z += cloud.userData.vz * delta;
+      if (cloud.position.x >  588) cloud.position.x = -588;
+      if (cloud.position.x < -588) cloud.position.x =  588;
+      if (cloud.position.z >  588) cloud.position.z = -588;
+      if (cloud.position.z < -588) cloud.position.z =  588;
+    }
+
+    // Interaction proximity check
+    const p = playerCtrl.player.position;
+    nearbyNPC = null;
+    for (const npc of npcManager.npcs) {
+      const dx = npc.group.position.x - p.x;
+      const dz = npc.group.position.z - p.z;
+      if (Math.sqrt(dx*dx + dz*dz) < INTERACT_RADIUS) {
+        nearbyNPC = npc;
+        break;
+      }
+    }
+
+    // CAD-446: Gift prompt
+    if (nearbyNPC) {
+      updateGiftPrompt(nearbyNPC.name, BAG.items.map(i => i.id));
+    } else {
+      hideGiftPrompt();
+    }
+
+    // Greeting toast when approaching an NPC
+    if (nearbyNPC !== lastNearbyNPC) {
+      if (nearbyNPC) {
+        greetingToast.textContent = `${nearbyNPC.name}: "Hello!"`;
+        greetingToast.style.opacity = '1';
+        greetingTimer = 2.4;
+      } else {
+        greetingToast.style.opacity = '0';
+      }
+      lastNearbyNPC = nearbyNPC;
+    }
+    if (greetingTimer > 0) {
+      greetingTimer -= delta;
+      if (greetingTimer <= 0) greetingToast.style.opacity = '0';
+    }
+
+    // Interact hint priority: building minigame > fishing > NPC
+    const _bGame = insideBuilding && BUILDING_MINIGAMES[insideBuilding.buildingKey];
+    const _fdx = playerPos.x - FISHING_TRIGGER.x;
+    const _fdz = playerPos.z - FISHING_TRIGGER.z;
+    const _nearFishing = Math.sqrt(_fdx*_fdx + _fdz*_fdz) < FISHING_TRIGGER.radius;
+    const _kdx = playerPos.x - KART_TRIGGER.x;
+    const _kdz = playerPos.z - KART_TRIGGER.z;
+    const _nearKart = Math.sqrt(_kdx*_kdx + _kdz*_kdz) < KART_TRIGGER.radius;
+    // CAD-443: Bed/sleep hint
+    if (!isSleeping() && isNearBed(playerPos)) {
+      interactHint.textContent = '🛏️ Press E to sleep (advances to 6am)';
+      interactHint.style.opacity = '1';
+    } else if (_bGame && !_bGame.active) {
+      const _labels = { bakery: '🍞 Press E to bake bread', pub: '🍺 Press E to serve at The Anchor', school: '📚 Press E to teach the class', cafe: '☕ Press E to work the café', postOffice: '📮 Press E to sort the mail' };
+      interactHint.textContent = _labels[insideBuilding.buildingKey] || `Press E to play`;
+      interactHint.style.opacity = '1';
+    } else if (_nearFishing && !_fishingGame.active) {
+      interactHint.textContent = '🎣 Press E to go fishing';
+      interactHint.style.opacity = '1';
+    } else if (_nearKart && !_kartGame.active) {
+      interactHint.textContent = '🏎️ Press E to race';
+      interactHint.style.opacity = '1';
+    } else {
+      interactHint.style.opacity = nearbyNPC ? '1' : '0';
+      if (nearbyNPC) interactHint.textContent = `Press E to talk to ${nearbyNPC.name}`;
+    }
+
+    // Dialogue timeout
+    if (dialogueTimer > 0) {
+      dialogueTimer -= delta;
+      if (dialogueTimer <= 0) dialogueBox.style.opacity = '0';
+    }
+
+    // Update HUD
+    posEl.textContent = `Position: ${p.x.toFixed(0)}, ${p.z.toFixed(0)}`;
+
+    // Update area title
+    const areaLabel = getNearestArea(p.x, p.z);
+    if (areaLabel !== lastAreaLabel) {
+      lastAreaLabel = areaLabel;
+      titleEl.textContent = areaLabel;
+    }
+
+    composer.render();
+  }
+
+  animate();
+
+  // --- Resize ---
+  window.addEventListener('resize', () => {
+    const width = window.innerWidth, height = window.innerHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+    composer.setSize(width, height);
+  });
+
+  // --- Key handlers ---
+  // M key → map toggle
+  // E key priority order:
+  //   1. Near boombox → toggle radio
+  //   2. Near open shift → sub-in prompt
+  //   3. Mini-game trigger → open mini-game
+  //   4. Near NPC with dialogue → show dialogue box
+  //   5. Near NPC with inventory → try give item
+  //   6. Else → try pick up item from world
+  const keyState = {};
+  window.addEventListener('keydown', (e) => {
+    if (keyState[e.code]) return; // ignore repeat
+    keyState[e.code] = true;
+
+    if (e.code === 'KeyM') {
+      window.toggleMap();
+      return;
+    }
+
+    if (e.code === 'KeyB') {
+      BAG.toggle();
+      return;
+    }
+
+    if (e.code === 'KeyP') {
+      // Community project (CAD-405) — start or contribute
+      if (!isProjectActive()) {
+        const proj = startProject();
+        if (proj) showNotification(`🏗️ Community Project started: ${proj.name}\n${proj.description}`);
+      } else {
+        const result = contributeToProject();
+        if (result) {
+          showNotification(result.complete ? `🎉 Project complete! ${result.line}` : `🏗️ ${result.line}`);
+        } else {
+          showNotification('🏗️ You work on the community project...');
+        }
+      }
+      return;
+    }
+
+    // CAD-447: Radio toggle
+    if (e.code === 'KeyF') {
+      toggleRadioStation();
+      return;
+    }
+
+    // CAD-443: Sleep — press E near bed
+    if (e.code === 'KeyE' && isNearBed(playerCtrl.player.position) && !isSleeping()) {
+      sleep((targetHour) => { gameHour = targetHour; });
+      return;
+    }
+
+    if (e.code !== 'KeyE') return;
+
+    const playerPos = playerCtrl.player.position;
+
+    // 1. Boombox / radio
+    if (isNearBoombox(playerPos)) {
+      toggleRadio();
+      return;
+    }
+
+    // 2. Job sub-in
+    const shift = findOpenShift(npcManager.npcs, playerPos);
+    if (shift) {
+      const msg = startSubInShift(shift.npcName);
+      showNotification(msg);
+      return;
+    }
+
+    // 3. Building minigames — trigger when inside zone and pressing E
+    if (insideBuilding) {
+      const bGame = BUILDING_MINIGAMES[insideBuilding.buildingKey];
+      if (bGame && !bGame.active) { bGame.start(); return; }
+    }
+    // Fishing — triggered near the dock
+    {
+      const fdx = playerPos.x - FISHING_TRIGGER.x;
+      const fdz = playerPos.z - FISHING_TRIGGER.z;
+      if (Math.sqrt(fdx*fdx + fdz*fdz) < FISHING_TRIGGER.radius && !_fishingGame.active) {
+        _fishingGame.start(); return;
+      }
+    }
+    // Kart race — triggered near the kart track
+    {
+      const kdx = playerPos.x - KART_TRIGGER.x;
+      const kdz = playerPos.z - KART_TRIGGER.z;
+      if (Math.sqrt(kdx*kdx + kdz*kdz) < KART_TRIGGER.radius && !_kartGame.active) {
+        _kartGame.start(); return;
+      }
+    }
+    // Legacy mini-game (PlayerController owns this if it exists)
+    if (playerCtrl.miniGame && playerCtrl.miniGame.tryOpen) {
+      if (playerCtrl.miniGame.tryOpen(playerPos)) return;
+    }
+
+    // 4. NPC dialogue (enhanced with relationships + memory)
+    if (nearbyNPC) {
+      // Record the talk for relationship system
+      const talkResult = recordTalk(nearbyNPC.name);
+
+      // Check for level-up milestone scene
+      if (talkResult.levelUp) {
+        const scene = checkMilestoneScene(nearbyNPC.name, talkResult.newLevel);
+        if (scene) {
+          dialogueName.textContent = `⭐ ${nearbyNPC.name} — ${scene.title}`;
+          dialogueLine.textContent = scene.lines.join('\n');
+          dialogueBox.style.opacity = '1';
+          dialogueTimer = DIALOGUE_DURATION * 2;
+          return;
+        }
+      }
+
+      // Check for memory-based dialogue
+      const memLine = getMemoryDialogue(nearbyNPC.name);
+
+      // Check for storm/market/project/energy dialogue
+      let eventLine = null;
+      if (isStormActive()) eventLine = getStormDialogue();
+      else if (isMarketDay()) eventLine = getMarketDialogue();
+      else if (isProjectActive()) eventLine = getProjectDialogue();
+      // CAD-436: low-energy dialogue when island energy is low
+      if (!eventLine) { const eLine = getLowEnergyDialogue(); if (eLine) eventLine = eLine; }
+
+      // Bea's collection dialogue
+      if (nearbyNPC.name === 'Bea' && Math.random() < 0.3) {
+        eventLine = getBeaCollectionDialogue();
+      }
+
+      const result = npcManager.getDialogue ? npcManager.getDialogue(nearbyNPC.name) : null;
+      if (result) {
+        const rel = getRelationship(nearbyNPC.name);
+        const levelInfo = getLevel(nearbyNPC.name);
+        dialogueName.textContent = `${levelInfo.emoji} ${result.name} · ${result.job || ''}`;
+        dialogueLine.textContent = memLine || eventLine || result.line;
+        dialogueBox.style.opacity = '1';
+        dialogueTimer = DIALOGUE_DURATION;
+        return;
+      }
+    }
+
+    // 5. Near NPC — try to give an item (CAD-395: gift giving with relationship effects)
+    let nearestNPC = null;
+    let nearestDist = Infinity;
+    for (const npc of npcManager.npcs) {
+      const d = npc.group.position.distanceTo(playerPos);
+      if (d < nearestDist) { nearestDist = d; nearestNPC = npc; }
+    }
+    if (nearestNPC && nearestDist < 8) {
+      // Check if near Bea and have something she wants
+      if (nearestNPC.name === 'Bea') {
+        const bagItems = BAG.items.filter(i => beaWantsItem(i.id));
+        if (bagItems.length > 0) {
+          const result = giveItemToBea(bagItems[0].id);
+          if (result) {
+            dialogueName.textContent = '🐚 Bea · Child';
+            let msg = result.response;
+            if (result.tradeItem) msg += `\n(Bea gives you a ${result.tradeItem.replace('_', ' ')} in return!)`;
+            dialogueLine.textContent = msg;
+            dialogueBox.style.opacity = '1';
+            dialogueTimer = DIALOGUE_DURATION;
+            if (result.tradeItem && ITEMS[result.tradeItem]) BAG.add(ITEMS[result.tradeItem], 1);
+            return;
+          }
+        }
+      }
+      // General gift giving — first item in bag
+      if (BAG.items.length > 0) {
+        const giftItem = BAG.items[0];
+        const giftResult = recordGift(nearestNPC.name, giftItem.id);
+        BAG.remove(giftItem.id, 1);
+        addMemory(nearestNPC.name, giftResult.liked ? 'gift_liked' : 'gift_any', { itemName: giftItem.name });
+        const reaction = getGiftReaction(nearestNPC.name, giftItem.id, giftItem.name);
+        dialogueName.textContent = `🎁 ${nearestNPC.name}`;
+        dialogueLine.textContent = reaction;
+        dialogueBox.style.opacity = '1';
+        dialogueTimer = DIALOGUE_DURATION;
+        if (giftResult.levelUp) {
+          const milestone = checkMilestoneScene(nearestNPC.name, giftResult.newLevel);
+          if (milestone) {
+            setTimeout(() => {
+              dialogueName.textContent = `⭐ ${nearestNPC.name} — ${milestone.title}`;
+              dialogueLine.textContent = milestone.lines.join('\n');
+              dialogueBox.style.opacity = '1';
+              dialogueTimer = DIALOGUE_DURATION * 2;
+            }, 2000);
+          }
+        }
+        return;
+      }
+      if (tryGiveItem(nearestNPC.name, nearestNPC.group.position, playerPos)) return;
+    }
+
+    // 6. Beachcombing pickup
+    if (beachcombingManager.tryPickup(playerPos)) return;
+
+    // 7. Pick up item from world
+    tryPickupItem(playerPos);
+  });
+  window.addEventListener('keyup', e => { keyState[e.code] = false; });
+</script>
+
+</body>
+</html>

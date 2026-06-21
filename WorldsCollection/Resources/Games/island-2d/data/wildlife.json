@@ -1,0 +1,67 @@
+{
+  "farmAnimals": {
+    "sheep": [
+      { "x": -190, "z": 85 },
+      { "x": -175, "z": 95 },
+      { "x": -200, "z": 100 },
+      { "x": -185, "z": 110 },
+      { "x": -170, "z": 80 },
+      { "x": -195, "z": 75 }
+    ],
+    "pigs": [
+      { "x": -185, "z": 68 },
+      { "x": -178, "z": 72 },
+      { "x": -190, "z": 78 },
+      { "x": -182, "z": 60 }
+    ],
+    "cows": [
+      { "x": -205, "z": 100 },
+      { "x": -198, "z": 115 },
+      { "x": -215, "z": 90 }
+    ],
+    "apiary": { "x": -90, "z": 60 },
+    "cats": [
+      { "x": -62, "z": -38, "bodyColor": "0xe07830", "eyeColor": "0xddaa00", "note": "ginger tabby, by the bakery" },
+      { "x": 4, "z": -12, "bodyColor": "0x888888", "eyeColor": "0x44dd66", "note": "grey, town square" },
+      { "x": 58, "z": -42, "bodyColor": "0x111111", "eyeColor": "0x44aaff", "note": "black, post office" },
+      { "x": -32, "z": -68, "bodyColor": "0xd4c8b0", "eyeColor": "0xcc7722", "note": "cream, near The Anchor" },
+      { "x": 8, "z": -53, "bodyColor": "0xc07030", "eyeColor": "0xddaa00", "note": "marmalade, café steps" },
+      { "x": 78, "z": 36, "bodyColor": "0xaaaaaa", "eyeColor": "0x44dd66", "note": "silver, library lawn" },
+      { "x": -82, "z": 38, "bodyColor": "0x3a2a1a", "eyeColor": "0xeecc00", "note": "dark tabby, workshop" }
+    ]
+  },
+  "wildlife": {
+    "seagulls": [
+      { "cx": 0, "cz": 220, "radius": 35, "height": 18, "phase": 0 },
+      { "cx": 0, "cz": 220, "radius": 25, "height": 24, "phase": 2.1 },
+      { "cx": 0, "cz": 220, "radius": 45, "height": 14, "phase": 4.2 },
+      { "cx": 20, "cz": -200, "radius": 30, "height": 16, "phase": 1.0 },
+      { "cx": -15, "cz": -200, "radius": 20, "height": 22, "phase": 3.5 },
+      { "cx": 0, "cz": 0, "radius": 50, "height": 30, "phase": 1.7 }
+    ],
+    "rabbits": [
+      { "x": -155, "z": 90 },
+      { "x": -140, "z": 70 },
+      { "x": -165, "z": 110 },
+      { "x": 160, "z": 100 },
+      { "x": 170, "z": 130 },
+      { "x": 150, "z": 115 },
+      { "x": -20, "z": -100 },
+      { "x": 10, "z": -90 },
+      { "x": -50, "z": -60 },
+      { "x": 30, "z": -50 }
+    ],
+    "butterflies": [
+      { "x": -70, "z": 55 },
+      { "x": -75, "z": 60 },
+      { "x": -60, "z": 50 },
+      { "x": -165, "z": 60 },
+      { "x": -160, "z": 65 },
+      { "x": 0, "z": 10 },
+      { "x": 5, "z": -5 },
+      { "x": -10, "z": 8 },
+      { "x": 80, "z": 40 },
+      { "x": 85, "z": 35 }
+    ]
+  }
+}

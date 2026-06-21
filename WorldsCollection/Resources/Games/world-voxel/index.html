@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>World Voxel</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%8D%3C/text%3E%3C/svg%3E">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0f; overflow: hidden; font-family: 'Georgia', serif; color: #e8e8e8; }
+    canvas { display: block; }
+
+    #hud {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 12px; align-items: center; pointer-events: none;
+      background: rgba(0,0,0,0.5); padding: 8px 18px; border-radius: 20px;
+      font-size: 13px; letter-spacing: 0.04em;
+    }
+    #hud span { opacity: 0.8; }
+    #hud .sep { opacity: 0.3; }
+
+    #sidebar {
+      position: fixed; top: 60px; right: 16px; width: 220px;
+      background: rgba(0,0,0,0.6); border-radius: 10px; padding: 12px 14px;
+      font-size: 12px; line-height: 1.7;
+    }
+    #sidebar h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
+      opacity: 0.5; margin-bottom: 6px; }
+    .stat-row { display: flex; justify-content: space-between; }
+    .stat-val { opacity: 0.9; font-variant-numeric: tabular-nums; }
+
+    #events {
+      position: fixed; bottom: 16px; left: 16px; width: 300px;
+      max-height: 180px; overflow: hidden;
+      display: flex; flex-direction: column-reverse; gap: 4px;
+      pointer-events: none;
+    }
+    .event-line {
+      background: rgba(0,0,0,0.55); border-radius: 6px;
+      padding: 4px 10px; font-size: 11px; opacity: 0;
+      animation: fadeEvent 6s forwards;
+    }
+    @keyframes fadeEvent {
+      0%   { opacity: 0; transform: translateY(6px); }
+      10%  { opacity: 1; transform: translateY(0); }
+      75%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    #controls {
+      position: fixed; bottom: 16px; right: 16px;
+      font-size: 11px; opacity: 0.45; text-align: right; line-height: 1.8;
+    }
+
+    #loading {
+      position: fixed; inset: 0; background: #0a0a0f;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; z-index: 100;
+    }
+    #loading h1 { font-size: 28px; letter-spacing: 0.1em; opacity: 0.9; }
+    #loading p  { font-size: 13px; opacity: 0.5; }
+    .progress-bar { width: 240px; height: 3px; background: #222; border-radius: 2px; }
+    .progress-fill { height: 100%; background: #52b788; border-radius: 2px;
+      transition: width 0.3s ease; width: 0%; }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <h1>WORLD VOXEL</h1>
+  <p id="load-status">Initialising simulation…</p>
+  <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+</div>
+
+<div id="hud" style="display:none">
+  <span id="hud-day">Day 1</span>
+  <span class="sep">|</span>
+  <span id="hud-time">06:00</span>
+  <span class="sep">|</span>
+  <span id="hud-pop">0 agents</span>
+  <span class="sep">|</span>
+  <span id="hud-era">Prehistoric</span>
+</div>
+
+<div id="sidebar" style="display:none">
+  <h3>Civilisation</h3>
+  <div class="stat-row"><span>Population</span><span class="stat-val" id="stat-pop">0</span></div>
+  <div class="stat-row"><span>Settlements</span><span class="stat-val" id="stat-settle">0</span></div>
+  <div class="stat-row"><span>Discoveries</span><span class="stat-val" id="stat-concepts">0</span></div>
+  <div class="stat-row"><span>Deaths</span><span class="stat-val" id="stat-deaths">0</span></div>
+  <div class="stat-row"><span>Births</span><span class="stat-val" id="stat-births">0</span></div>
+  <br>
+  <h3>World</h3>
+  <div class="stat-row"><span>Weather</span><span class="stat-val" id="stat-weather">Clear</span></div>
+  <div class="stat-row"><span>Fires</span><span class="stat-val" id="stat-fires">0</span></div>
+  <div class="stat-row"><span>Sick</span><span class="stat-val" id="stat-sick">0</span></div>
+</div>
+
+<div id="events"></div>
+
+<div id="controls">
+  Drag to orbit · Scroll to zoom<br>
+  Space: pause · +/-: speed
+</div>
+
+<script type="module">
+import * as THREE from './vendor/three.module.js';
+import { buildHumanoid, animateHumanoid, HUMANOID_HEIGHT } from './engine/character.js';
+import { buildHeightmap, tileToVoxel, tileToSurfaceY, SEA_LEVEL, TILE_VOXELS } from './engine/terrain.js';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const VS        = 0.5;   // voxel → Three.js units
+const WORLD_W   = 128;
+const WORLD_H   = 128;
+const VOXEL_W   = WORLD_W * TILE_VOXELS;
+const VOXEL_H   = WORLD_H * TILE_VOXELS;
+
+// Voxel palette colours (matches Island Voxel mesher VCOLOR)
+const VCOLOR = [
+  0x000000, 0x52b030, 0x8b6f47, 0x8a949c, 0xe8d5a3, 0x2e8db5, 0x16496a,
+  0xeef2f8, 0x6e7880, 0x267a34, 0x9a8878, 0x388028, 0x72cc30, 0xc4b47c,
+  0x7a4e18, 0x38cc4a, 0x186830, 0xd4880a, 0x224e1c, 0x26c050,
+];
+
+// Tile type → display colour for minimap / flat terrain blocks
+const TILE_HEX = {
+  DEEP_WATER: 0x16496a, WATER: 0x2e8db5, BEACH: 0xe8d5a3,
+  GRASS: 0x52b030, WOODLAND: 0x388028, FOREST: 0x267a34,
+  DESERT: 0xd4a843, STONE: 0x8a949c, MOUNTAIN: 0x6e7880,
+  GLACIER: 0xeef2f8, LAVA: 0xe05c2b, DIRT: 0x8b6f47,
+};
+
+// ─── Renderer setup ───────────────────────────────────────────────────────────
+const canvas   = document.createElement('canvas');
+document.body.appendChild(canvas);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = false;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x87b8d4, 0.0015);
+scene.background = new THREE.Color(0x87b8d4);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 2000);
+// Start overlooking the centre of the world
+const cx = (VOXEL_W / 2) * VS;
+const cz = (VOXEL_H / 2) * VS;
+camera.position.set(cx, 120, cz + 180);
+camera.lookAt(cx, 0, cz);
+
+// Lighting
+const sun = new THREE.DirectionalLight(0xfff5e0, 2.2);
+sun.position.set(300, 500, 200);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x8898aa, 1.1));
+scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4a7c59, 0.6));
+
+// ─── Orbit controls (manual) ─────────────────────────────────────────────────
+let orbit = { theta: 0, phi: 0.9, radius: 200, target: new THREE.Vector3(cx, 0, cz) };
+let drag = null;
+canvas.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY }; });
+window.addEventListener('mouseup',   () => { drag = null; });
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  orbit.theta -= (e.clientX - drag.x) * 0.005;
+  orbit.phi    = Math.max(0.15, Math.min(1.5, orbit.phi + (e.clientY - drag.y) * 0.005));
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+canvas.addEventListener('wheel', e => {
+  orbit.radius = Math.max(30, Math.min(600, orbit.radius + e.deltaY * 0.3));
+}, { passive: true });
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) drag = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (!drag || e.touches.length !== 1) return;
+  orbit.theta -= (e.touches[0].clientX - drag.x) * 0.005;
+  orbit.phi    = Math.max(0.15, Math.min(1.5, orbit.phi + (e.touches[0].clientY - drag.y) * 0.005));
+  drag.x = e.touches[0].clientX; drag.y = e.touches[0].clientY;
+}, { passive: true });
+canvas.addEventListener('touchend', () => { drag = null; }, { passive: true });
+
+function updateCamera() {
+  const r = orbit.radius;
+  camera.position.set(
+    orbit.target.x + r * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+    orbit.target.y + r * Math.cos(orbit.phi),
+    orbit.target.z + r * Math.sin(orbit.phi) * Math.cos(orbit.theta),
+  );
+  camera.lookAt(orbit.target);
+}
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ─── Terrain mesh ─────────────────────────────────────────────────────────────
+// Flat shaded boxes per voxel column — efficient for static terrain
+let terrainMesh = null;
+let tiles        = [];        // flat array of tile objects from worker
+let heightmap    = null;      // { heights, types, voxelW, voxelH }
+let surfaceCache = new Map(); // "tx,tz" → vy
+
+function buildTerrainMesh() {
+  if (terrainMesh) { scene.remove(terrainMesh); terrainMesh.geometry.dispose(); }
+
+  heightmap = buildHeightmap(tiles, WORLD_W, WORLD_H);
+  surfaceCache.clear();
+
+  const positions = [];
+  const colors    = [];
+  const indices   = [];
+  let vi = 0;
+
+  const { heights, types, voxelW, voxelH } = heightmap;
+
+  for (let vz = 0; vz < voxelH; vz++) {
+    for (let vx = 0; vx < voxelW; vx++) {
+      const i  = vz * voxelW + vx;
+      const h  = heights[i];
+      const t  = types[i];
+      const cx = vx * VS, cz = vz * VS;
+      const cy = h * VS;
+      const s  = VS * 0.5;
+
+      // Simple top-face quad per column
+      const hex = VCOLOR[t] || 0x52b030;
+      const r = ((hex >> 16) & 0xff) / 255;
+      const g = ((hex >> 8)  & 0xff) / 255;
+      const b = ( hex        & 0xff) / 255;
+
+      // top face (y = cy + VS/2) — wound counter-clockwise seen from above so
+      // the front face points up and isn't back-face culled
+      positions.push(
+        cx-s, cy+VS, cz-s,
+        cx+s, cy+VS, cz-s,
+        cx+s, cy+VS, cz+s,
+        cx-s, cy+VS, cz+s,
+      );
+      for (let k = 0; k < 4; k++) colors.push(r, g, b);
+      indices.push(vi,vi+2,vi+1, vi,vi+3,vi+2);
+      vi += 4;
+
+      // side faces where a neighbour column is lower (or at the map border)
+      const dr = r*0.75, dg = g*0.75, db = b*0.75;
+      // [neighbour index or -1, wall x/z offsets a→b, fixed axis]
+      const south = vz === voxelH-1 ? -1 : (vz+1)*voxelW+vx;
+      const north = vz === 0        ? -1 : (vz-1)*voxelW+vx;
+      const east  = vx === voxelW-1 ? -1 : vz*voxelW+vx+1;
+      const west  = vx === 0        ? -1 : vz*voxelW+vx-1;
+      // each entry: bottom-left/bottom-right wall corners ordered so the
+      // outward face winds counter-clockwise from outside
+      const walls = [
+        [south, cx-s, cz+s, cx+s, cz+s],
+        [north, cx+s, cz-s, cx-s, cz-s],
+        [east,  cx+s, cz+s, cx+s, cz-s],
+        [west,  cx-s, cz-s, cx-s, cz+s],
+      ];
+      for (const [ni, ax, az, bx, bz] of walls) {
+        if (ni !== -1 && heights[ni] >= h) continue;
+        const lh = ni === -1 ? 0 : heights[ni] * VS;
+        positions.push(
+          ax, lh,    az,
+          bx, lh,    bz,
+          bx, cy+VS, bz,
+          ax, cy+VS, az,
+        );
+        for (let k = 0; k < 4; k++) colors.push(dr, dg, db);
+        indices.push(vi,vi+1,vi+2, vi,vi+2,vi+3);
+        vi += 4;
+      }
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  terrainMesh = new THREE.Mesh(geo, mat);
+  terrainMesh.matrixAutoUpdate = false;
+  terrainMesh.updateMatrix();
+  scene.add(terrainMesh);
+}
+
+function getSurfaceY(tx, tz) {
+  const key = tx + ',' + tz;
+  if (surfaceCache.has(key)) return surfaceCache.get(key);
+  if (!tiles.length) return SEA_LEVEL;
+  const vy = tileToSurfaceY(tiles, WORLD_W, tx, tz);
+  surfaceCache.set(key, vy);
+  return vy;
+}
+
+// ─── Agent humanoids ──────────────────────────────────────────────────────────
+const agentMeshes = new Map(); // id → { group, parts, anim }
+
+const STATE_COLOR = {
+  WANDERING: 0x8ecae6, GATHERING: 0x52b788, SLEEPING: 0x9b72aa,
+  SOCIALIZING: 0xffd166, DISCOVERING: 0xef476f, FISHING: 0x43b0f1,
+  PERFORMING: 0xf4a261, TRADING: 0xe9c46a, RITUAL: 0xc77dff,
+};
+const STAGE_SCALE  = { infant: 0.45, child: 0.7, adult: 1.0, elder: 0.95 };
+const HAIR_COLORS  = [0x2c1810, 0x8b5e3c, 0xf4c430, 0xa0522d, 0xd2b48c, 0x808080];
+const SKIN_TONES   = [0xffd5b2, 0xe8b38a, 0xc68642, 0x8d5524, 0x6b3f2a];
+
+function nameHash(s) {
+  let h = 0;
+  if (s) for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function spawnAgent(ag) {
+  const shirtColor = STATE_COLOR[ag.state] || 0x8ecae6;
+  const { group, parts } = buildHumanoid({
+    skinTone:   SKIN_TONES[nameHash(ag.name) % SKIN_TONES.length],
+    hairColor:  HAIR_COLORS[nameHash(ag.id) % HAIR_COLORS.length],
+    shirtColor,
+    pantsColor: 0x4a4e69,
+    castShadow: false,
+  });
+  scene.add(group);
+  const entry = { group, parts, anim: { walkPhase: Math.random() * Math.PI * 2 } };
+  agentMeshes.set(ag.id, entry);
+  return entry;
+}
+
+function updateAgents(agents, dt) {
+  const seen = new Set();
+
+  for (const ag of agents) {
+    seen.add(ag.id);
+    if (ag.isDead) { removeAgent(ag.id); continue; }
+
+    let entry = agentMeshes.get(ag.id);
+    if (!entry) entry = spawnAgent(ag);
+
+    // Position
+    const { vx, vz } = tileToVoxel(ag.x, ag.z);
+    const vy = getSurfaceY(Math.floor(ag.x), Math.floor(ag.z));
+    entry.group.position.set(vx * VS, vy * VS, vz * VS);
+
+    // Facing
+    if (ag.facingX !== 0 || ag.facingZ !== 0) {
+      entry.group.rotation.y = Math.atan2(ag.facingX, ag.facingZ);
+    }
+
+    // Scale
+    entry.group.scale.setScalar(STAGE_SCALE[ag.lifeStage] || 1.0);
+
+    // Body colour
+    const color = ag.isSick ? 0x90ee70 : (STATE_COLOR[ag.state] || 0x8ecae6);
+    if (entry.parts.body) entry.parts.body.material.color.setHex(color);
+    if (entry.parts.armL) entry.parts.armL.material.color.setHex(color);
+    if (entry.parts.armR) entry.parts.armR.material.color.setHex(color);
+
+    // Walk animation
+    const moving = ['WANDERING','GATHERING','FISHING','TRADING'].includes(ag.state);
+    animateHumanoid(entry.parts, entry.anim, dt, { speed: moving ? 2.5 * VS : 0, grounded: true });
+  }
+
+  for (const [id] of agentMeshes) {
+    if (!seen.has(id)) removeAgent(id);
+  }
+}
+
+function removeAgent(id) {
+  const entry = agentMeshes.get(id);
+  if (!entry) return;
+  scene.remove(entry.group);
+  entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  agentMeshes.delete(id);
+}
+
+// ─── Event log UI ─────────────────────────────────────────────────────────────
+const eventsEl = document.getElementById('events');
+const EVENT_ICONS = {
+  discovery: '💡', birth: '👶', death: '💀', disaster: '🌋',
+  settlement: '🏕️', war: '⚔️', disease: '🦠', fire: '🔥',
+  achievement: '🏆',
+};
+
+function pushEvent(ev) {
+  const icon = EVENT_ICONS[ev.type] || '•';
+  const text = ev.message || ev.name || ev.type;
+  const el   = document.createElement('div');
+  el.className = 'event-line';
+  el.textContent = icon + ' ' + text;
+  eventsEl.prepend(el);
+  if (eventsEl.children.length > 8) eventsEl.lastChild.remove();
+}
+
+// ─── HUD update ───────────────────────────────────────────────────────────────
+let totalDeaths = 0, totalBirths = 0;
+function updateHUD(stats, agents) {
+  if (!stats) return;
+  const day  = stats.day  || 1;
+  const h    = Math.floor((stats.timeOfDay || 0) * 24);
+  const m    = Math.floor(((stats.timeOfDay || 0) * 24 - h) * 60);
+  const era  = stats.era  || 'Prehistoric';
+  const pop  = agents.filter(a => !a.isDead).length;
+  const sick = agents.filter(a => a.isSick).length;
+  document.getElementById('hud-day').textContent  = 'Day ' + day;
+  document.getElementById('hud-time').textContent = h.toString().padStart(2,'0') + ':' + m.toString().padStart(2,'0');
+  document.getElementById('hud-pop').textContent  = pop + ' agents';
+  document.getElementById('hud-era').textContent  = era;
+  document.getElementById('stat-pop').textContent     = pop;
+  document.getElementById('stat-settle').textContent  = stats.settlements || 0;
+  document.getElementById('stat-concepts').textContent = stats.conceptsKnown || 0;
+  document.getElementById('stat-deaths').textContent  = totalDeaths;
+  document.getElementById('stat-births').textContent  = totalBirths;
+  document.getElementById('stat-weather').textContent = stats.weather || 'Clear';
+  document.getElementById('stat-fires').textContent   = stats.activeFires || 0;
+  document.getElementById('stat-sick').textContent    = sick;
+}
+
+// ─── Simulation worker ────────────────────────────────────────────────────────
+const worker = new Worker('./simulation/SimulationWorker.js', { type: 'module' });
+let agents   = [];
+let paused   = false;
+let simSpeed = 1;
+
+async function init() {
+  setProgress(10, 'Fetching simulation data…');
+
+  const [conceptsRes, itemsRes] = await Promise.all([
+    fetch('./data/concepts.json'),
+    fetch('./data/items.json'),
+  ]);
+  const conceptsData = await conceptsRes.json();
+  const itemsData    = await itemsRes.json();
+
+  setProgress(25, 'Starting simulation worker…');
+
+  worker.postMessage({
+    type: 'INIT',
+    seed: Math.floor(Math.random() * 99999),
+    agentCount: 40,
+    conceptsData,
+    itemsData,
+  });
+}
+
+init().catch(err => {
+  console.error('Init failed:', err);
+  setProgress(0, 'Failed to load: ' + err.message);
+});
+
+worker.onmessage = ({ data }) => {
+  if (data.type === 'INIT_COMPLETE') {
+    tiles = data.fullTiles.map((t, i) => ({
+      ...t, x: i % WORLD_W, z: Math.floor(i / WORLD_W),
+    }));
+    agents = data.agentState || [];
+
+    setProgress(60, 'Building voxel terrain…');
+    buildTerrainMesh();
+    setProgress(90, 'Spawning agents…');
+
+    // Show UI
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('hud').style.display     = '';
+    document.getElementById('sidebar').style.display = '';
+
+    setProgress(100, 'Ready');
+    loop();
+
+  } else if (data.type === 'STATE') {
+    agents = data.agents || agents;
+
+    // Apply tile changes
+    if (data.tileChanges && data.tileChanges.length) {
+      for (const tc of data.tileChanges) {
+        const idx = tc.z * WORLD_W + tc.x;
+        if (tiles[idx]) tiles[idx].type = tc.type;
+      }
+      // Rebuild terrain if significant changes
+      if (data.tileChanges.length > 5) buildTerrainMesh();
+    }
+
+    // Process events
+    if (data.events) {
+      for (const ev of data.events) {
+        if (ev.type === 'death')  totalDeaths++;
+        if (ev.type === 'birth')  totalBirths++;
+        pushEvent(ev);
+      }
+    }
+
+    updateHUD(data.worldStats, agents);
+  }
+};
+
+worker.onerror = err => {
+  console.error('Worker error:', err);
+  const detail = err && err.message ? err.message : 'failed to load (this browser may not support module workers — Safari needs 15+)';
+  setProgress(0, 'Simulation worker error: ' + detail);
+};
+
+// ─── Game loop ─────────────────────────────────────────────────────────────────
+let lastTime = performance.now();
+
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  const dt  = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime  = now;
+
+  if (!paused) {
+    worker.postMessage({ type: 'TICK', delta: dt * simSpeed });
+    updateAgents(agents, dt);
+  }
+
+  updateCamera();
+  renderer.render(scene, camera);
+}
+
+// ─── Controls ────────────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+  if (e.key  === '+'  || e.key === '=') simSpeed = Math.min(simSpeed * 1.5, 8);
+  if (e.key  === '-')                   simSpeed = Math.max(simSpeed / 1.5, 0.25);
+});
+
+function setProgress(pct, msg) {
+  document.getElementById('progress').style.width    = pct + '%';
+  document.getElementById('load-status').textContent = msg;
+}
+</script>
+</body>
+</html>

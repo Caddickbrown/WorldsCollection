@@ -1,0 +1,676 @@
+1|<!DOCTYPE html>
+2|<html lang="en">
+3|<head>
+4|  <meta charset="UTF-8">
+5|  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+6|  <title>Island Toon — Demo</title>
+7|  <style>
+8|    * { margin: 0; padding: 0; box-sizing: border-box; }
+9|    body { background: #7ed6cb; overflow: hidden; font-family: sans-serif; }
+10|    canvas { display: block; }
+11|    #ui {
+12|      position: fixed; top: 16px; left: 16px;
+13|      background: rgba(0,0,0,0.45); color: #fff;
+14|      padding: 12px 16px; border-radius: 8px;
+15|      font-size: 13px; line-height: 1.8;
+16|      pointer-events: none;
+17|    }
+18|    #controls {
+19|      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+20|      background: rgba(0,0,0,0.45); color: #fff;
+21|      padding: 10px 16px; border-radius: 8px;
+22|      font-size: 12px; text-align: center;
+23|      pointer-events: none;
+24|    }
+25|    label { pointer-events: all; cursor: pointer; }
+26|    input[type=range] { pointer-events: all; cursor: pointer; }
+27|    #params {
+28|      position: fixed; top: 16px; right: 16px;
+29|      background: rgba(0,0,0,0.5); color: #fff;
+30|      padding: 12px 16px; border-radius: 8px;
+31|      font-size: 12px; line-height: 2;
+32|      width: 220px;
+33|    }
+34|    #params input[type=range] { width: 100%; }
+35|    #params select {
+36|      background: #333; color: #fff; border: none;
+37|      padding: 2px 6px; border-radius: 4px; width: 100%;
+38|    }
+39|    .section-heading {
+40|      color: #aef; font-size: 11px; letter-spacing: 0.08em;
+41|      text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;
+42|      border-top: 1px solid rgba(255,255,255,0.15); padding-top: 8px;
+43|    }
+44|    .section-heading:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+45|    /* Shader mode buttons */
+46|    #shaderBtns {
+47|      display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;
+48|    }
+49|    #shaderBtns button {
+50|      flex: 1; background: #333; color: #ccc; border: 1px solid #555;
+51|      padding: 3px 6px; border-radius: 4px; font-size: 11px; cursor: pointer;
+52|      pointer-events: all;
+53|    }
+54|    #shaderBtns button.active {
+55|      background: #4a8; color: #fff; border-color: #6ec;
+56|    }
+57|  </style>
+58|</head>
+59|<body>
+60|<div id="ui">
+61|  <strong>Island Toon</strong> — shader demo<br>
+62|  Three.js toon shading + custom outline pass<br>
+63|  <span id="info" style="color:#aef">Drag to orbit</span>
+64|</div>
+65|
+66|<div id="params">
+67|  <div class="section-heading">Shader Mode</div>
+68|  <div id="shaderBtns">
+69|    <button class="active" data-mode="toon">Toon</button>
+70|    <button data-mode="standard">PBR</button>
+71|    <button data-mode="flat">Flat</button>
+72|    <button data-mode="wireframe">Wire</button>
+73|  </div>
+74|
+75|  <div class="section-heading">Toon Settings</div>
+76|  <label>Gradient steps:
+77|    <select id="gradSteps">
+78|      <option value="2">2 — harsh</option>
+79|      <option value="3" selected>3 — standard</option>
+80|      <option value="4">4 — soft</option>
+81|    </select>
+82|  </label>
+83|
+84|  <div class="section-heading">Outline Settings</div>
+85|  <label>Thickness: <span id="thickVal">1.0</span>
+86|    <input type="range" id="thickness" min="0.5" max="4" step="0.1" value="1.0">
+87|  </label>
+88|  <label>Depth threshold: <span id="depthVal">0.002</span>
+89|    <input type="range" id="depthThresh" min="0.0001" max="0.02" step="0.0001" value="0.002">
+90|  </label>
+91|  <label>Normal threshold: <span id="normVal">0.30</span>
+92|    <input type="range" id="normThresh" min="0.05" max="1.0" step="0.01" value="0.30">
+93|  </label>
+94|  <label>Strength: <span id="strVal">1.0</span>
+95|    <input type="range" id="strength" min="0" max="1" step="0.05" value="1.0">
+96|  </label>
+97|
+98|  <div class="section-heading">Environment</div>
+99|  <label><input type="checkbox" id="outlineToggle" checked> Outlines</label>&nbsp;
+100|  <label><input type="checkbox" id="fogToggle" checked> Fog</label>
+101|</div>
+102|
+103|<div id="controls">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+104|
+105|<script type="importmap">
+106|{
+107|  "imports": {
+108|    "three": "worlds://island-toon/vendor/three/three.module.js",
+109|    "three/addons/": "worlds://island-toon/vendor/three/"
+110|  }
+111|}
+112|</script>
+113|
+114|<script type="module">
+115|import * as THREE from 'three';
+116|import { OrbitControls }  from 'three/addons/controls/OrbitControls.js';
+117|import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+118|import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
+119|import { OutputPass }     from 'three/addons/postprocessing/OutputPass.js';
+120|
+121|import { GRAD2, GRAD3, GRAD4 } from './src/gradient.js';
+122|import { OutlinePass }          from './src/outline-pass.js';
+123|import { renderNormals, createNormalTarget } from './src/normal-pass.js';
+124|
+125|// ─── Renderer ────────────────────────────────────────────────────────────────
+126|var renderer = new THREE.WebGLRenderer({ antialias: false });
+127|renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+128|renderer.setSize(window.innerWidth, window.innerHeight);
+129|renderer.shadowMap.enabled = true;
+130|renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+131|document.body.appendChild(renderer.domElement);
+132|
+133|// ─── Scene + Camera ──────────────────────────────────────────────────────────
+134|var scene  = new THREE.Scene();
+135|var SKY    = 0x7ed6cb;
+136|scene.background = new THREE.Color(SKY);
+137|scene.fog = new THREE.Fog(SKY, 60, 160);
+138|
+139|var camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 600);
+140|camera.position.set(45, 38, 65);
+141|
+142|var controls = new OrbitControls(camera, renderer.domElement);
+143|controls.target.set(0, 4, 0);
+144|controls.enableDamping = true;
+145|controls.dampingFactor = 0.08;
+146|controls.update();
+147|
+148|// ─── Lighting ─────────────────────────────────────────────────────────────────
+149|var ambient = new THREE.AmbientLight(0xffffff, 0.4);
+150|scene.add(ambient);
+151|
+152|var sun = new THREE.DirectionalLight(0xfff5e0, 1.7);
+153|sun.position.set(50, 80, 30);
+154|sun.castShadow = true;
+155|sun.shadow.mapSize.set(2048, 2048);
+156|sun.shadow.camera.near = 1;
+157|sun.shadow.camera.far  = 350;
+158|sun.shadow.camera.left = sun.shadow.camera.bottom = -80;
+159|sun.shadow.camera.right = sun.shadow.camera.top   =  80;
+160|scene.add(sun);
+161|
+162|// subtle fill from opposite side
+163|var fill = new THREE.DirectionalLight(0xb0e0f5, 0.35);
+164|fill.position.set(-30, 20, -20);
+165|scene.add(fill);
+166|
+167|// ─── Gradient maps ────────────────────────────────────────────────────────────
+168|var gradients = { '2': GRAD2, '3': GRAD3, '4': GRAD4 };
+169|var activeGrad = GRAD3;
+170|
+171|// ─── Shader mode system ───────────────────────────────────────────────────────
+172|var SHADER_MODE = 'toon';
+173|var meshColors = []; // [{mesh, color}] — ordered so we can rebuild
+174|
+175|function matFor(color) {
+176|  switch (SHADER_MODE) {
+177|    case 'standard':
+178|      return new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.0 });
+179|    case 'flat':
+180|      return new THREE.MeshLambertMaterial({ color, flatShading: true });
+181|    case 'wireframe':
+182|      return new THREE.MeshBasicMaterial({ color, wireframe: true });
+183|    default: // 'toon'
+184|      return new THREE.MeshToonMaterial({ color, gradientMap: activeGrad });
+185|  }
+186|}
+187|
+188|function toon(color) {
+189|  var mat = matFor(color);
+190|  return mat;
+191|}
+192|
+193|// register mesh + track its colour for later rebuilds
+194|function addMesh(mesh, color) {
+195|  meshColors.push({ mesh, color });
+196|  return mesh;
+197|}
+198|
+199|function make(geo, color, castShadow, receiveShadow) {
+200|  var m = new THREE.Mesh(geo, toon(color));
+201|  if (castShadow !== false)   m.castShadow = true;
+202|  if (receiveShadow !== false) m.receiveShadow = true;
+203|  meshColors.push({ mesh: m, color });
+204|  return m;
+205|}
+206|
+207|function rebuildAllMaterials() {
+208|  for (var i = 0; i < meshColors.length; i++) {
+209|    var entry = meshColors[i];
+210|    entry.mesh.material.dispose();
+211|    entry.mesh.material = matFor(entry.color);
+212|  }
+213|}
+214|
+215|// ─── Scene geometry helpers ───────────────────────────────────────────────────
+216|
+217|// Box shortcut
+218|function box(w, h, d, color, x, y, z, ry) {
+219|  var m = make(new THREE.BoxGeometry(w, h, d), color);
+220|  m.position.set(x, y + h / 2, z);
+221|  if (ry) m.rotation.y = ry;
+222|  scene.add(m);
+223|  return m;
+224|}
+225|
+226|// Cylinder shortcut
+227|function cyl(rt, rb, h, segs, color, x, y, z) {
+228|  var m = make(new THREE.CylinderGeometry(rt, rb, h, segs), color);
+229|  m.position.set(x, y + h / 2, z);
+230|  scene.add(m);
+231|  return m;
+232|}
+233|
+234|// Cone shortcut
+235|function cone(r, h, segs, color, x, y, z, ry) {
+236|  var m = make(new THREE.ConeGeometry(r, h, segs), color);
+237|  m.position.set(x, y + h / 2, z);
+238|  if (ry) m.rotation.y = ry;
+239|  scene.add(m);
+240|  return m;
+241|}
+242|
+243|// Sphere shortcut
+244|function sphere(r, ws, hs, color, x, y, z) {
+245|  var m = make(new THREE.SphereGeometry(r, ws, hs), color);
+246|  m.position.set(x, y, z);
+247|  scene.add(m);
+248|  return m;
+249|}
+250|
+251|// ─── TERRAIN ──────────────────────────────────────────────────────────────────
+252|
+253|// Ocean (static water — no toon so not in meshColors, handled separately)
+254|var waterMat = new THREE.MeshToonMaterial({ color: 0x2e8db5, gradientMap: activeGrad });
+255|var water = new THREE.Mesh(new THREE.PlaneGeometry(200, 200, 1, 1), waterMat);
+256|water.rotation.x = -Math.PI / 2;
+257|water.position.y = -0.5;
+258|water.receiveShadow = true;
+259|scene.add(water);
+260|
+261|// Island ground (main mass)
+262|var ground = make(new THREE.CylinderGeometry(46, 50, 3.5, 24), 0x52b030, false, true);
+263|ground.position.set(0, -2.5, 0);
+264|scene.add(ground);
+265|
+266|// Sandy beach ring
+267|var beach = make(new THREE.CylinderGeometry(50, 52, 1.2, 24), 0xe8d5a3, false, true);
+268|beach.position.set(0, -3.2, 0);
+269|scene.add(beach);
+270|
+271|// Flat plains (base surface level)
+272|var plains = make(new THREE.CylinderGeometry(36, 44, 0.5, 24), 0x52b030, false, true);
+273|plains.position.set(0, 0.2, 0);
+274|scene.add(plains);
+275|
+276|// ─── MOUNTAIN (NW) ────────────────────────────────────────────────────────────
+277|// Base
+278|cyl(4, 14, 9, 8, 0x8a949c, -22, 0, -20);
+279|// Mid section
+280|cyl(2.5, 5, 7, 8, 0x7a8490, -22, 9, -20);
+281|// Peak snow
+282|cyl(0.3, 2.8, 5, 8, 0xeef2f8, -22, 16, -20);
+283|// Snow cap dome
+284|sphere(2.4, 8, 6, 0xeef2f8, -22, 21, -20);
+285|
+286|// Rocky highland ridge (between mountain and town)
+287|cyl(5, 8, 3, 10, 0x8a949c, -12, 0, -12);
+288|cyl(3, 6, 2.5, 8, 0x8a949c, -6, 0, -16);
+289|
+290|// ─── CLIFFS (NW coast) ────────────────────────────────────────────────────────
+291|box(6, 5, 4, 0x6e7880, -34, -1, -18);
+292|box(5, 4, 5, 0x6e7880, -32, -1, -10);
+293|box(7, 6, 3, 0x6e7880, -36, -1, -26);
+294|
+295|// ─── LIGHTHOUSE (SW rocky point) ─────────────────────────────────────────────
+296|// Rocky platform
+297|cyl(3, 4, 2, 8, 0x6e7880, -35, -0.5, 14);
+298|// Tower
+299|cyl(0.8, 1.1, 10, 10, 0xf5f0e0, -35, 1.5, 14);
+300|// Red stripe
+301|cyl(0.85, 0.85, 1.2, 10, 0xcc3322, -35, 7.5, 14);
+302|// Lantern room
+303|cyl(1.5, 1.5, 1.2, 10, 0x444444, -35, 11.5, 14);
+304|// Glass dome
+305|sphere(1.2, 8, 6, 0x9dd7e0, -35, 13, 14);
+306|// Roof cone
+307|cone(1.6, 1.5, 8, 0xcc3322, -35, 13, 14);
+308|
+309|// ─── HARBOUR (S) ──────────────────────────────────────────────────────────────
+310|// Harbour wall
+311|box(22, 1.5, 2, 0x9a8878, 0, 0, 34);
+312|box(2, 1.5, 12, 0x9a8878, -10, 0, 28);
+313|box(2, 1.5, 12, 0x9a8878, 10, 0, 28);
+314|
+315|// Dock planks (brown wooden pier)
+316|box(4, 0.4, 16, 0x7a4e18, -4, 0, 38);
+317|box(4, 0.4, 16, 0x7a4e18, 4, 0, 38);
+318|// Pier posts
+319|for (var pi = 0; pi < 5; pi++) {
+320|  cyl(0.15, 0.2, 2.5, 4, 0x5a3010, -4 + pi * 2, -1, 40);
+321|  cyl(0.15, 0.2, 2.5, 4, 0x5a3010, -4 + pi * 2, -1, 44);
+322|}
+323|
+324|// Boats
+325|// Boat 1 (red hull)
+326|box(2.5, 0.8, 5.5, 0xcc3322, -8, -0.4, 38);
+327|box(1.5, 1.2, 0.3, 0xf5f0e0, -8, 0.4, 36.5); // cabin
+328|cone(0.2, 4, 4, 0x5a3010, -8, 2, 38, 0); // mast
+329|
+330|// Boat 2 (blue hull)
+331|box(2.5, 0.8, 5, 0x336699, 9, -0.4, 40);
+332|box(1.2, 1.0, 0.3, 0xf5f0e0, 9, 0.4, 39);
+333|cone(0.2, 4, 4, 0x5a3010, 9, 2, 40, 0);
+334|
+335|// Boat 3 (white fishing boat, further out)
+336|box(3, 0.9, 6.5, 0xf0ece0, 3, -0.6, 47);
+337|box(1.8, 1.3, 0.3, 0x8a949c, 3, 0.5, 45.5);
+338|
+339|// Harbour buildings
+340|box(5, 3.5, 4, 0xe8dfc8, -6, 0, 30);  // harbourmaster
+341|cone(3, 2, 4, 0x8b3a1e, -6, 3.5, 30, Math.PI/4);
+342|box(4, 3, 4, 0xd9e8d0, 6, 0, 29);     // fish market
+343|cone(2.5, 2, 4, 0x3a6b2a, 6, 3, 29, Math.PI/4);
+344|
+345|// ─── TOWN (centre) ────────────────────────────────────────────────────────────
+346|// Market square (cobble slab)
+347|var square = make(new THREE.CylinderGeometry(8, 8.5, 0.3, 12), 0xb0a090, false, true);
+348|square.position.set(0, 0, 0);
+349|scene.add(square);
+350|
+351|// Market well
+352|cyl(0.6, 0.7, 1.5, 8, 0x9a8878, 0, 0, 0);
+353|cyl(0.65, 0.65, 0.3, 8, 0x5a3010, 0, 1.5, 0); // well cap
+354|// Well posts
+355|cyl(0.12, 0.12, 2, 5, 0x5a3010, -0.8, 0, 0);
+356|cyl(0.12, 0.12, 2, 5, 0x5a3010, 0.8, 0, 0);
+357|box(1.8, 0.15, 0.15, 0x5a3010, 0, 2, 0); // crossbeam
+358|
+359|function house(x, z, wallCol, roofCol, ry) {
+360|  // Walls (2 thick for visual depth)
+361|  var wall = make(new THREE.BoxGeometry(3, 3, 3.5), wallCol);
+362|  wall.position.set(x, 1.5, z);
+363|  if (ry) wall.rotation.y = ry;
+364|  wall.castShadow = wall.receiveShadow = true;
+365|  scene.add(wall);
+366|
+367|  // Chimney
+368|  cyl(0.25, 0.3, 2, 4, 0x9a8878, x + 0.8, 3, z);
+369|
+370|  // Roof
+371|  var roof = make(new THREE.ConeGeometry(2.6, 2.2, 4), roofCol);
+372|  roof.position.set(x, 4.1, z);
+373|  roof.rotation.y = (ry || 0) + Math.PI / 4;
+374|  roof.castShadow = true;
+375|  scene.add(roof);
+376|
+377|  // Door
+378|  box(0.65, 1.1, 0.15, 0x7a4e18, x, 0, z + 1.78);
+379|  // Window x2
+380|  box(0.7, 0.55, 0.1, 0x9dd7e0, x + 0.85, 1.9, z + 1.78);
+381|  box(0.7, 0.55, 0.1, 0x9dd7e0, x - 0.85, 1.9, z + 1.78);
+382|}
+383|
+384|// Town houses (ring around square)
+385|house(-10,  2, 0xf5e8d0, 0xc04a2a);
+386|house(-9,  -6, 0xe8dfc8, 0x8b3a1e);
+387|house(-4,  -9, 0xd9e8d0, 0x3a6b2a);
+388|house( 4,  -9, 0xf0e0c0, 0xb84020);
+389|house( 10, -6, 0xe0d5c0, 0x5a3a18);
+390|house( 10,  3, 0xf5e8d0, 0xa03520);
+391|house( 3,   9, 0xe8dfc8, 0x3a6b2a);
+392|house(-4,   9, 0xd4e0f0, 0x3a5a8a);
+393|house(-11,  9, 0xf0e4d0, 0x8b3a1e);
+394|
+395|// ─── CHURCH (NE of town) ─────────────────────────────────────────────────────
+396|// Nave
+397|box(5, 5, 9, 0xf5f0e0, 16, 0, -4);
+398|// Chancel
+399|box(3.5, 4.5, 4, 0xf5f0e0, 16, 0, 2.5);
+400|// Roof nave
+401|var churchRoof = make(new THREE.BoxGeometry(5.5, 1.5, 9.5), 0x8a949c);
+402|churchRoof.position.set(16, 5.75, -4);
+403|scene.add(churchRoof);
+404|cone(3.1, 1.8, 4, 0x8a949c, 16, 5.5, -4, Math.PI/4);
+405|// Bell tower
+406|cyl(1.2, 1.4, 8, 8, 0xf5f0e0, 14, 0, -9);
+407|cone(1.5, 2.5, 8, 0x8a949c, 14, 8, -9);
+408|// Cross on tower
+409|box(0.2, 1.8, 0.2, 0xaaaaaa, 14, 11.5, -9);
+410|box(1, 0.2, 0.2, 0xaaaaaa, 14, 12, -9);
+411|// Church door (arched — approximate with box)
+412|box(1.2, 2.0, 0.15, 0x7a4e18, 16, 0, 1.2);
+413|// Stained glass window
+414|box(1.5, 2.0, 0.1, 0xd4a0c0, 16, 2.5, 1.25);
+415|
+416|// ─── BAKER + SHOP (W of square) ───────────────────────────────────────────────
+417|// Baker with chimney smoke suggestion
+418|box(4.5, 3, 4, 0xf5e0c0, -14, 0, 4);
+419|cone(3, 2, 4, 0xc04a2a, -14, 3, 4, Math.PI/4);
+420|cyl(0.3, 0.35, 2.5, 5, 0x9a8878, -13, 3, 4);
+421|cyl(0.3, 0.35, 2.5, 5, 0x9a8878, -15, 3, 4);
+422|// Sign
+423|box(1.5, 0.7, 0.15, 0x8b6f47, -14, 2.5, 6.1);
+424|
+425|// General store
+426|box(4, 3, 4, 0xe8dfc8, -14, 0, 12);
+427|cone(2.8, 2, 4, 0x8b3a1e, -14, 3, 12, Math.PI/4);
+428|
+429|// ─── PATHS ────────────────────────────────────────────────────────────────────
+430|// Main road N-S through town (pebble coloured)
+431|var road1 = make(new THREE.BoxGeometry(3, 0.08, 40), 0xb0a090, false, true);
+432|road1.position.set(0, 0.05, 5);
+433|scene.add(road1);
+434|// E-W road
+435|var road2 = make(new THREE.BoxGeometry(40, 0.08, 3), 0xb0a090, false, true);
+436|road2.position.set(-5, 0.05, 0);
+437|scene.add(road2);
+438|
+439|// ─── FARM (W) ────────────────────────────────────────────────────────────────
+440|// Crop rows
+441|var CROP = 0x3ec858;
+442|for (var fi = 0; fi < 5; fi++) {
+443|  box(1.5, 0.6, 12, fi % 2 === 0 ? CROP : 0x52b030, -26 + fi * 2.5, 0, 8);
+444|}
+445|// Farmhouse
+446|box(4.5, 3.5, 5, 0xf0e0c0, -30, 0, 4);
+447|cone(3.2, 2.2, 4, 0x8b4820, -30, 3.5, 4, Math.PI/4);
+448|// Barn
+449|box(6, 4, 8, 0xaa4428, -30, 0, 14);
+450|cone(3.8, 3, 4, 0x8a3010, -30, 4, 14, Math.PI/4);
+451|// Hay bales
+452|cyl(1.2, 1.2, 1.5, 10, 0xd4b840, -25, 0, 16, 0);
+453|cyl(1.2, 1.2, 1.5, 10, 0xd4b840, -27, 0, 16, 0);
+454|// Fence (thin posts)
+455|for (var fp = 0; fp < 8; fp++) {
+456|  cyl(0.1, 0.1, 1.2, 4, 0x7a4e18, -22 + fp * 1.8, 0, 19);
+457|}
+458|
+459|// ─── FISHING VILLAGE (SE) ────────────────────────────────────────────────────
+460|house(18,  18, 0xf5e8d0, 0xc04a2a);
+461|house(24,  22, 0xe8dfc8, 0x3a6b2a);
+462|house(28,  16, 0xd9e8d0, 0x8b3a1e);
+463|house(22,  28, 0xf0e0c0, 0xb84020);
+464|// Net drying rack
+465|cyl(0.12, 0.12, 3, 4, 0x5a3010, 16, 0, 24);
+466|cyl(0.12, 0.12, 3, 4, 0x5a3010, 20, 0, 24);
+467|box(4.5, 0.1, 0.1, 0x9a6030, 18, 3, 24); // crossbar
+468|
+469|// ─── FOREST (NE) ─────────────────────────────────────────────────────────────
+470|function pine(x, z, h) {
+471|  cyl(0.18, 0.25, h * 0.45, 5, 0x5a3010, x, 0, z);
+472|  for (var ti = 0; ti < 3; ti++) {
+473|    var r  = (1.1 - ti * 0.22);
+474|    var cy = h * 0.4 + ti * h * 0.22;
+475|    cone(r, h * 0.28, 6, 0x224e1c, x, cy, z);
+476|  }
+477|}
+478|
+479|function oak(x, z, h) {
+480|  cyl(0.2, 0.25, h * 0.5, 6, 0x5a3010, x, 0, z);
+481|  sphere(h * 0.32, 7, 5, 0x38cc4a, x, h * 0.6, z);
+482|  sphere(h * 0.22, 6, 4, 0x2eb84a, x + h * 0.18, h * 0.65, z + h * 0.1);
+483|  sphere(h * 0.22, 6, 4, 0x1a7832, x - h * 0.15, h * 0.6, z - h * 0.12);
+484|}
+485|
+486|// NE forest — dense
+487|var forestTrees = [
+488|  [20,-20,5], [24,-16,6], [27,-22,5.5], [22,-27,6.5], [30,-18,4.5],
+489|  [25,-30,5], [32,-24,6], [18,-24,5], [28,-14,4], [35,-20,5.5],
+490|  [33,-28,6], [26,-12,4.5], [20,-32,5], [38,-16,4], [30,-8,5],
+491|  [36,-12,5.5], [23,-8,4.5], [40,-22,5], [15,-20,4.5], [18,-15,5],
+492|];
+493|for (var ft = 0; ft < forestTrees.length; ft++) {
+494|  var td = forestTrees[ft];
+495|  if (ft % 3 === 0) oak(td[0], td[1], td[2]);
+496|  else pine(td[0], td[1], td[2]);
+497|}
+498|
+499|// Highland forest (NW, near mountain)
+500|var highlandTrees = [
+501|  [-16,-8,4], [-14,-14,4.5], [-18,-16,4], [-10,-10,4.5], [-8,-18,5],
+502|  [-20,-6,3.5], [-12,-20,4], [-6,-14,4.5],
+503|];
+504|for (var ht = 0; ht < highlandTrees.length; ht++) {
+505|  var hd = highlandTrees[ht];
+506|  pine(hd[0], hd[1], hd[2]);
+507|}
+508|
+509|// Scattered oaks near town
+510|oak(-16, 2, 4.5);
+511|oak(-18,-2, 5);
+512|oak( 14, 6, 4);
+513|oak( 12, 10, 5);
+514|oak(-12, 14, 4.5);
+515|oak( 6, 14, 4);
+516|oak(-6, 16, 5);
+517|
+518|// Shoreline palms (SE beach)
+519|function palm(x, z) {
+520|  var h = 3.5 + Math.random() * 1.5;
+521|  cyl(0.12, 0.18, h, 5, 0x6b4010, x, 0, z);
+522|  sphere(1.4, 6, 4, 0x26c050, x, h, z);
+523|  sphere(0.9, 5, 3, 0x30a840, x + 0.8, h - 0.3, z + 0.5);
+524|}
+525|palm(36, 4); palm(38, 8); palm(40, 16); palm(38, 24); palm(34, 30);
+526|
+527|// ─── SALT MARSH (W coast) ────────────────────────────────────────────────────
+528|var marsh = make(new THREE.CylinderGeometry(8, 9, 0.5, 12), 0x267a34, false, true);
+529|marsh.position.set(-38, 0, 6);
+530|scene.add(marsh);
+531|// Reeds (thin sticks)
+532|for (var ri = 0; ri < 12; ri++) {
+533|  var ra = ri * Math.PI * 2 / 12;
+534|  cyl(0.08, 0.1, 2, 4, 0x3a6030, -38 + Math.cos(ra)*5, 0.3, 6 + Math.sin(ra)*5);
+535|}
+536|
+537|// ─── BOULDERS scattered ───────────────────────────────────────────────────────
+538|sphere(1.4, 6, 5, 0x6e7880, -28, 0.5, -4);
+539|sphere(1.1, 6, 5, 0x7a8490, -26, 0.3, -7);
+540|sphere(1.6, 6, 5, 0x6e7880, -3, 0.4, -28);
+541|sphere(1.0, 6, 5, 0x7a8490, 2, 0.3, -30);
+542|sphere(1.3, 6, 5, 0x6e7880, 30, 0.4, -4);
+543|sphere(0.9, 6, 5, 0x7a8490, 32, 0.3, -2);
+544|
+545|// ─── Post-processing setup ────────────────────────────────────────────────────
+546|var normalTarget = createNormalTarget(renderer);
+547|
+548|var depthTex = new THREE.DepthTexture();
+549|depthTex.type   = THREE.UnsignedShortType;
+550|depthTex.format = THREE.DepthFormat;
+551|
+552|var sz = renderer.getSize(new THREE.Vector2());
+553|var renderTarget = new THREE.WebGLRenderTarget(sz.x, sz.y, {
+554|  minFilter:    THREE.NearestFilter,
+555|  magFilter:    THREE.NearestFilter,
+556|  format:       THREE.RGBAFormat,
+557|  depthTexture: depthTex,
+558|});
+559|
+560|var composer = new EffectComposer(renderer, renderTarget);
+561|composer.addPass(new RenderPass(scene, camera));
+562|
+563|var outlinePass = new OutlinePass({
+564|  camera,
+565|  normalTarget,
+566|  outlineColor:    0x1a1a1a,
+567|  thickness:       1.0,
+568|  depthThreshold:  0.002,
+569|  normalThreshold: 0.30,
+570|  strength:        1.0,
+571|});
+572|outlinePass.renderToScreen = false;
+573|composer.addPass(outlinePass);
+574|
+575|var outputPass = new OutputPass();
+576|outputPass.renderToScreen = true;
+577|composer.addPass(outputPass);
+578|
+579|// ─── Resize ───────────────────────────────────────────────────────────────────
+580|window.addEventListener('resize', function() {
+581|  camera.aspect = window.innerWidth / window.innerHeight;
+582|  camera.updateProjectionMatrix();
+583|  renderer.setSize(window.innerWidth, window.innerHeight);
+584|  composer.setSize(window.innerWidth, window.innerHeight);
+585|  normalTarget.setSize(window.innerWidth, window.innerHeight);
+586|});
+587|
+588|// ─── UI: Shader mode toggle ───────────────────────────────────────────────────
+589|document.getElementById('shaderBtns').addEventListener('click', function(e) {
+590|  var btn = e.target.closest('button');
+591|  if (!btn) return;
+592|  SHADER_MODE = btn.dataset.mode;
+593|  document.querySelectorAll('#shaderBtns button').forEach(function(b) {
+594|    b.classList.toggle('active', b === btn);
+595|  });
+596|  rebuildAllMaterials();
+597|  // Water material too
+598|  waterMat.dispose();
+599|  waterMat = matFor(0x2e8db5);
+600|  water.material = waterMat;
+601|  // If wireframe on water doesn't look great with rotation, that's fine
+602|  // Toon gradient controls only apply in toon mode
+603|  document.getElementById('gradSteps').closest('label').style.opacity =
+604|    SHADER_MODE === 'toon' ? '1' : '0.4';
+605|  outlinePass.enabled = document.getElementById('outlineToggle').checked &&
+606|    SHADER_MODE !== 'wireframe';
+607|});
+608|
+609|// ─── UI: Toon controls ────────────────────────────────────────────────────────
+610|document.getElementById('gradSteps').addEventListener('change', function(e) {
+611|  activeGrad = gradients[e.target.value];
+612|  if (SHADER_MODE !== 'toon') return;
+613|  for (var i = 0; i < meshColors.length; i++) {
+614|    var mat = meshColors[i].mesh.material;
+615|    if (mat.isMeshToonMaterial) { mat.gradientMap = activeGrad; mat.needsUpdate = true; }
+616|  }
+617|  waterMat.gradientMap = activeGrad;
+618|  waterMat.needsUpdate = true;
+619|});
+620|
+621|document.getElementById('thickness').addEventListener('input', function(e) {
+622|  var v = parseFloat(e.target.value);
+623|  outlinePass.uniforms.uThickness.value = v;
+624|  document.getElementById('thickVal').textContent = v.toFixed(1);
+625|});
+626|document.getElementById('depthThresh').addEventListener('input', function(e) {
+627|  var v = parseFloat(e.target.value);
+628|  outlinePass.uniforms.uDepthThreshold.value = v;
+629|  document.getElementById('depthVal').textContent = v.toFixed(4);
+630|});
+631|document.getElementById('normThresh').addEventListener('input', function(e) {
+632|  var v = parseFloat(e.target.value);
+633|  outlinePass.uniforms.uNormalThreshold.value = v;
+634|  document.getElementById('normVal').textContent = v.toFixed(2);
+635|});
+636|document.getElementById('strength').addEventListener('input', function(e) {
+637|  var v = parseFloat(e.target.value);
+638|  outlinePass.uniforms.uOutlineStrength.value = v;
+639|  document.getElementById('strVal').textContent = v.toFixed(2);
+640|});
+641|document.getElementById('outlineToggle').addEventListener('change', function(e) {
+642|  outlinePass.enabled = e.target.checked;
+643|});
+644|document.getElementById('fogToggle').addEventListener('change', function(e) {
+645|  scene.fog = e.target.checked ? new THREE.Fog(SKY, 60, 160) : null;
+646|  scene.background = new THREE.Color(e.target.checked ? SKY : 0x222233);
+647|  water.material.color.set(e.target.checked ? 0x2e8db5 : 0x1a5a7a);
+648|});
+649|
+650|// ─── Render loop ─────────────────────────────────────────────────────────────
+651|var clock = new THREE.Clock();
+652|
+653|function loop() {
+654|  requestAnimationFrame(loop);
+655|  var dt  = clock.getDelta();
+656|  var et  = clock.elapsedTime;
+657|  controls.update();
+658|
+659|  // Gentle water bob
+660|  water.position.y = -0.5 + Math.sin(et * 0.7) * 0.06;
+661|
+662|  // Outline pass only makes sense in toon/standard/flat modes
+663|  var useOutline = outlinePass.enabled && SHADER_MODE !== 'wireframe';
+664|  if (useOutline) {
+665|    renderNormals(renderer, scene, camera, normalTarget);
+666|    composer.render(dt);
+667|  } else {
+668|    renderer.render(scene, camera);
+669|  }
+670|}
+671|
+672|loop();
+673|</script>
+674|</body>
+675|</html>
+676|

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Island</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { overflow:hidden; background:#04101e; font-family:Georgia,serif; }
+    canvas#c { display:block; position:fixed; inset:0; }
+
+    #loading {
+      position:fixed; inset:0; background:#04101e; z-index:200;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      color:#fff; letter-spacing:3px;
+    }
+    #loading h1 { font-size:18px; font-weight:normal; margin-bottom:18px; }
+    #loading .sub { font:11px/1 monospace; opacity:.4; margin-top:8px; }
+    #loading .track { width:200px; height:1px; background:rgba(255,255,255,.12); margin-top:16px; }
+    #loading .fill  { height:1px; background:rgba(255,255,255,.65); width:0%; transition:width .3s; }
+
+    #menu {
+      position:fixed; inset:0; z-index:150; display:none;
+      flex-direction:column; align-items:center; justify-content:center;
+      background:rgba(4,16,30,.78); backdrop-filter:blur(10px);
+      color:#fff; letter-spacing:3px;
+    }
+    #menu h1 { font-size:22px; font-weight:normal; letter-spacing:8px; margin-bottom:30px; }
+    #menu button {
+      font:14px Georgia; letter-spacing:4px; color:#fff; cursor:pointer;
+      background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.45);
+      border-radius:8px; padding:12px 46px;
+    }
+    #menu button:hover { background:rgba(255,255,255,.25); }
+    #menu .opt { display:flex; gap:10px; align-items:center; margin-top:26px;
+      font:13px Georgia; letter-spacing:1px; color:rgba(255,255,255,.85); cursor:pointer; }
+    #menu .opt input { width:16px; height:16px; cursor:pointer; }
+    #menu .mcontrols { margin-top:30px; font:11px monospace; letter-spacing:1px;
+      color:rgba(255,255,255,.5); line-height:2.1; text-align:center; }
+    #gear { position:absolute; top:14px; left:14px; pointer-events:auto;
+      width:36px; height:36px; border-radius:50%; font-size:17px;
+      background:rgba(0,0,0,.32); border:1px solid rgba(255,255,255,.3);
+      color:rgba(255,255,255,.85); display:flex; align-items:center; justify-content:center;
+      cursor:pointer; user-select:none; backdrop-filter:blur(6px); }
+
+    #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+    #title { position:absolute; top:14px; left:50%; transform:translateX(-50%);
+      font-size:16px; letter-spacing:5px; color:rgba(255,255,255,.9);
+      background:rgba(0,0,0,.32); padding:7px 22px; border-radius:7px; backdrop-filter:blur(8px); }
+    #time  { position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
+      font:12px/1 monospace; color:rgba(255,255,255,.75);
+      background:rgba(0,0,0,.32); padding:5px 14px; border-radius:6px; backdrop-filter:blur(6px); }
+    #area  { position:absolute; top:52px; left:50%; transform:translateX(-50%);
+      font-size:12px; letter-spacing:2px; color:rgba(255,255,255,.6);
+      background:rgba(0,0,0,.28); padding:5px 16px; border-radius:5px; backdrop-filter:blur(6px);
+      transition:opacity .5s; opacity:0; }
+    #stats { position:absolute; top:14px; right:14px;
+      font:10px/2 monospace; color:rgba(255,255,255,.7);
+      background:rgba(0,0,0,.32); padding:6px 12px; border-radius:7px; backdrop-filter:blur(6px); }
+    #interact { position:absolute; bottom:22px; right:22px; pointer-events:auto;
+      width:52px; height:52px; border-radius:50%;
+      background:rgba(255,255,255,.18); border:2px solid rgba(255,255,255,.45);
+      color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center;
+      cursor:pointer; user-select:none; }
+    #jump { position:absolute; bottom:88px; right:22px; pointer-events:auto;
+      width:60px; height:60px; border-radius:50%; display:none;
+      background:rgba(255,255,255,.18); border:2px solid rgba(255,255,255,.45);
+      color:#fff; font-size:24px; align-items:center; justify-content:center;
+      cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
+    body.touch #jump { display:flex; }
+    #hint .touch-hint { display:none; }
+    body.touch #hint .kbd-hint { display:none; }
+    body.touch #hint .touch-hint { display:inline; }
+    #dialogue {
+      position:absolute; bottom:80px; left:50%; transform:translateX(-50%);
+      max-width:480px; width:90%;
+      background:rgba(0,0,0,.72); border-radius:10px; padding:14px 18px;
+      backdrop-filter:blur(10px); color:#fff; display:none;
+      border:1px solid rgba(255,255,255,.15);
+    }
+    #dialogue .dname { font:bold 13px Georgia; color:#ffd700; letter-spacing:1px; margin-bottom:4px; }
+    #dialogue .djob  { font:11px Georgia; color:rgba(255,255,255,.5); margin-bottom:10px; }
+    #dialogue .dline { font:14px/1.6 Georgia; color:rgba(255,255,255,.92); }
+    #dialogue .dhint { font:11px monospace; color:rgba(255,255,255,.3); margin-top:10px; text-align:right; }
+    #prompt { position:absolute; bottom:60px; left:50%; transform:translateX(-50%);
+      font:12px monospace; color:rgba(255,255,255,.9);
+      background:rgba(0,0,0,.45); padding:6px 14px; border-radius:6px;
+      backdrop-filter:blur(6px); display:none; }
+    #prompt b { color:#ffd700; }
+    #hint { position:absolute; bottom:110px; left:50%; transform:translateX(-50%);
+      font:11px monospace; color:rgba(255,255,255,.75); text-align:center; line-height:1.9;
+      background:rgba(0,0,0,.4); padding:8px 18px; border-radius:8px;
+      backdrop-filter:blur(6px); transition:opacity 1s; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <h1>ISLAND</h1>
+    <div class="sub" id="lstatus">initialising…</div>
+    <div class="track"><div class="fill" id="lfill"></div></div>
+  </div>
+
+  <canvas id="c"></canvas>
+
+  <div id="menu">
+    <h1>ISLAND</h1>
+    <button id="menu-resume">BEGIN</button>
+    <label class="opt"><input type="checkbox" id="opt-invert"> Invert camera Y&nbsp; <span style="opacity:.5">(mouse · touch · controller)</span></label>
+    <div class="mcontrols">
+      WASD / left stick — move &nbsp;·&nbsp; mouse / right stick — look<br>
+      Shift / L3 — run &nbsp;·&nbsp; Space / A — jump &nbsp;·&nbsp; E / X — talk<br>
+      Esc / Start — menu
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="title">ISLAND</div>
+    <div id="gear" title="Menu (Esc)">⚙</div>
+    <div id="time">08:00</div>
+    <div id="area"></div>
+    <div id="stats"></div>
+    <div id="interact" title="Interact (E)">E</div>
+    <div id="jump" title="Jump">↑</div>
+    <div id="prompt"></div>
+    <div id="hint"><span class="kbd-hint">click to look around · WASD move · Shift run · Space jump · <b style="color:#ffd700">E</b> talk</span><span class="touch-hint">left side move · right side look · <b style="color:#ffd700">↑</b> jump · <b style="color:#ffd700">E</b> talk</span></div>
+    <div id="dialogue">
+      <div class="dname" id="d-name"></div>
+      <div class="djob"  id="d-job"></div>
+      <div class="dline" id="d-line"></div>
+      <div class="dhint">E to dismiss</div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  { "imports": {
+    "three":          "worlds://island-voxel/vendor/three/three.module.js",
+    "three/addons/":  "worlds://island-voxel/vendor/three/"
+  } }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { World, VS, S, SEA_LEVEL, CX, CZ } from './engine/world.js';
+    import { Renderer }      from './engine/renderer.js';
+    import { ChunkLoader }   from './engine/chunkloader.js';
+    import { Water }         from './engine/water.js';
+    import { DayNight }      from './engine/daynight.js';
+    import { Input }         from './engine/input.js';
+    import { Player }        from './engine/player.js';
+    import { EntityManager, Seagull, Sheep, Deer, Whale, Boat } from './engine/entities.js';
+    import { NPCManager }    from './engine/npc.js';
+    import { populateWorld, AREAS } from './game/island.js';
+    import { NPC_DEFS, DIALOGUE } from './game/npcs.js';
+
+    const lstatus = document.getElementById('lstatus');
+    const lfill   = document.getElementById('lfill');
+    const areaEl  = document.getElementById('area');
+    const statsEl = document.getElementById('stats');
+
+    // ── Dialogue ─────────────────────────────────────────────────────────────
+    const dialogueEl = document.getElementById('dialogue');
+    let _dialogueTimer = 0;
+    function showDialogue(name, job, line) {
+      document.getElementById('d-name').textContent = name;
+      document.getElementById('d-job').textContent = job;
+      document.getElementById('d-line').textContent = `"${line}"`;
+      dialogueEl.style.display = 'block';
+      _dialogueTimer = 6;
+    }
+
+    function setStatus(msg, pct) {
+      lstatus.textContent = msg;
+      lfill.style.width = pct + '%';
+    }
+
+    function defer(fn, pct) {
+      return new Promise(r => setTimeout(() => { fn(); lfill.style.width = pct+'%'; r(); }, 16));
+    }
+
+    // ── Module-scope game objects (assigned during boot, used by loop) ────────
+    let renderer, world, input, entities, npcMgr, loader, water, dayNight, player;
+
+    // ── Boot ──────────────────────────────────────────────────────────────────
+    const canvas = document.getElementById('c');
+
+    setStatus('creating renderer…', 5);
+    renderer  = new Renderer(canvas);
+    world     = new World();
+    input     = new Input(canvas);
+    entities  = new EntityManager();
+    npcMgr    = new NPCManager(renderer.scene, world, AREAS);
+
+    // ── Start / pause menu & settings ─────────────────────────────────────────
+    const menuEl    = document.getElementById('menu');
+    const resumeBtn = document.getElementById('menu-resume');
+    const invertEl  = document.getElementById('opt-invert');
+    let menuOpen = false, gameStarted = false;
+
+    input.invertY = localStorage.getItem('island.invertY') === '1';
+    invertEl.checked = input.invertY;
+    invertEl.addEventListener('change', () => {
+      input.invertY = invertEl.checked;
+      localStorage.setItem('island.invertY', invertEl.checked ? '1' : '0');
+    });
+
+    function openMenu() {
+      menuOpen = true;
+      menuEl.style.display = 'flex';
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+    function closeMenu() {
+      menuOpen = false;
+      menuEl.style.display = 'none';
+      if (!gameStarted) { gameStarted = true; resumeBtn.textContent = 'RESUME'; }
+    }
+    resumeBtn.addEventListener('click', () => {
+      closeMenu();
+      if (!document.body.classList.contains('touch')) {
+        // May reject during Chrome's post-Esc cooldown; clicking the canvas locks
+        const p = canvas.requestPointerLock();
+        if (p && p.catch) p.catch(() => {});
+      }
+    });
+    document.getElementById('gear').addEventListener('click', () => { if (!menuOpen) openMenu(); });
+    // Esc under pointer lock never reaches keydown — the browser eats it while
+    // releasing the lock — so the pause menu opens off the lock change instead
+    document.addEventListener('pointerlockchange', () => {
+      if (gameStarted && !document.pointerLockElement && !menuOpen) openMenu();
+    });
+
+    setStatus('generating terrain…', 10);
+    await defer(() => {}, 10);
+
+    // Preload spawn area synchronously
+    setStatus('loading spawn chunks…', 15);
+    loader = new ChunkLoader(world, renderer);
+    await defer(() => loader.preloadSync(CX, CZ, 4), 40);
+
+    // Populate island features
+    setStatus('placing buildings & landscape…', 42);
+    const interactables = await new Promise(r => setTimeout(() => r(populateWorld(world)), 16));
+    lfill.style.width = '65%';
+
+    // Re-mesh chunks dirtied by island placement
+    setStatus('re-meshing world features…', 65);
+    await defer(() => loader.preloadSync(CX, CZ, 5), 80);
+
+    // Water & sky
+    setStatus('initialising sky…', 82);
+    water   = new Water(renderer.scene, 640, SEA_LEVEL, VS);
+    water.setCenter(CX * VS, CZ * VS);
+    dayNight = new DayNight(renderer, water, CX * VS, CZ * VS);
+
+    // Player — spawn on the cobbles just off the fountain
+    setStatus('spawning player…', 88);
+    player = new Player(world, renderer, input);
+    player.spawnAt(CX + 16, CZ + 10);
+
+    // Lantern lights at key spots
+    for (const area of Object.values(AREAS)) {
+      const wx = CX + area.x * S, wz = CZ + area.z * S;
+      const wy = world.getSurfaceY(Math.round(wx), Math.round(wz));
+      renderer.addLanternLight(wx, wy + S*4, wz);
+    }
+
+    // Wildlife
+    setStatus('spawning wildlife…', 92);
+    // Seagulls — around dock
+    for (let i=0;i<5;i++) entities.add(new Seagull(renderer.scene, CX+(-8+Math.random()*16), 26+Math.random()*8, CZ+(S*106+Math.random()*6)));
+    for (let i=0;i<3;i++) entities.add(new Seagull(renderer.scene, CX+(-14+Math.random()*28), 22, CZ+(-22+Math.random()*44)));
+    // Sheep on farm
+    for (let i=0;i<6;i++) entities.add(new Sheep(renderer.scene, world, -78+(-14+Math.random()*28), 44+(-10+Math.random()*20)));
+    // Deer in forest
+    for (let i=0;i<3;i++) entities.add(new Deer(renderer.scene, world, 56+Math.random()*26, 44+Math.random()*30));
+    // Whale
+    entities.add(new Whale(renderer.scene, CX, CZ, SEA_LEVEL*VS));
+    // Boats
+    entities.add(new Boat(renderer.scene, -8, 106, 0xcc2a18, false, SEA_LEVEL*VS));
+    entities.add(new Boat(renderer.scene, 10, 110, 0xf5f0e8, true,  SEA_LEVEL*VS));
+
+    // Interact button (buffered so the press survives until the next frame)
+    document.getElementById('interact').addEventListener('click', () => input.press('interact'));
+
+    // Jump button — touch devices only (desktop has Space). touchstart fires
+    // immediately, without click delay, and mustn't also grab the look-drag.
+    const jumpBtn = document.getElementById('jump');
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      document.body.classList.add('touch');
+      jumpBtn.addEventListener('touchstart', e => { e.preventDefault(); input.press('jump'); }, { passive: false });
+    }
+    jumpBtn.addEventListener('click', () => input.press('jump'));
+
+    // Build area → world position map for NPC navigation
+    setStatus('placing NPCs…', 94);
+    const areaPositions = {};
+    for (const [key, area] of Object.entries(AREAS)) {
+      const wx = CX + area.x * S, wz = CZ + area.z * S;
+      const wy = world.getSurfaceY(Math.round(wx), Math.round(wz));
+      // Also add lowercase key variants for schedule lookup
+      areaPositions[key.toLowerCase()] = new THREE.Vector3(wx * VS, wy * VS, wz * VS);
+      // Common aliases used in schedules
+    }
+    // Extra aliases used in schedules that differ from AREAS keys
+    const ALIASES = {
+      plains: 'mill', // schedules use 'plains' but AREAS has no such key
+      beach: 'sandy_bay', southbeach: 'beach_south', eastbeach: 'east_beach',
+      forestpath: 'forest', farm: 'farm', hilltop: 'wind_ridge',
+      dock: 'harbour', science: 'science_center', mill: 'mill',
+      radio: 'radio_station', generalstore: 'general_store',
+      treehouse: 'treehouse', aquarium: 'aquarium', pub: 'pub',
+      school: 'school', library: 'library', cafe: 'cafe', bakery: 'bakery',
+      workshop: 'workshop', lighthouse: 'lighthouse', village: 'village',
+      townSquare: 'town_square', 'mabelhome':'village','gushome':'village',
+      'fernhome':'plains','olivehome':'village','rosahome':'village',
+      'jackhome':'fishing_village','petehome':'plains','barneyhome':'village',
+      'sukihome':'village','clarahome':'village','rexhome':'village',
+      'ottohome':'village','petrahome':'forest','jinhome':'village',
+      'willhome':'village','lenahome':'fishing_village','kaihome':'village',
+      'beahome':'village','elliothome':'village',
+    };
+    for (const [alias, target] of Object.entries(ALIASES)) {
+      if (!areaPositions[alias] && areaPositions[target])
+        areaPositions[alias] = areaPositions[target];
+    }
+    npcMgr.setAreaPositions(areaPositions);
+
+    // Spawn all NPCs
+    for (const def of NPC_DEFS) npcMgr.spawn(def);
+
+    lfill.style.width = '100%';
+    setStatus('ready', 100);
+    await new Promise(r => setTimeout(r, 300));
+    document.getElementById('loading').style.display = 'none';
+    openMenu(); // start menu — BEGIN closes it and (on desktop) grabs the pointer
+
+    // ── Area proximity detection ───────────────────────────────────────────────
+    let _lastArea = '', _areaTimer = 0;
+    function checkArea() {
+      const px = player.position.x / VS - CX;
+      const pz = player.position.z / VS - CZ;
+      let closest = null, closestDist = S * 20;
+      for (const [, area] of Object.entries(AREAS)) {
+        const d = Math.sqrt((px - area.x*S)**2 + (pz - area.z*S)**2);
+        if (d < closestDist) { closestDist = d; closest = area; }
+      }
+      if (closest && closest.label !== _lastArea) {
+        _lastArea = closest.label;
+        areaEl.textContent = closest.label;
+        areaEl.style.opacity = '1';
+        _areaTimer = 3;
+      }
+    }
+
+    // ── Controls hint — fades after first look-around or 10s ─────────────────
+    const hintEl = document.getElementById('hint');
+    let _hintTimer = 10;
+    document.addEventListener('pointerlockchange', () => { _hintTimer = Math.min(_hintTimer, 2); });
+
+    // ── Game loop ─────────────────────────────────────────────────────────────
+    const promptEl = document.getElementById('prompt');
+    const interactBtn = document.getElementById('interact');
+    let last = 0, fps = 60, fpsA = 0, fpsN = 0;
+    let _statsTimer = 0, _promptTimer = 0;
+    const VIEW_DIST = 8;
+
+    function loop(now) {
+      requestAnimationFrame(loop);
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
+
+      // FPS counter
+      fpsA += dt; fpsN++;
+      if (fpsA >= 1) { fps = Math.round(fpsN / fpsA); fpsA = 0; fpsN = 0; }
+
+      input.update();
+
+      // Esc / Start / ⚙ toggles the menu and pauses the world
+      if (input.wasPressed('pause')) menuOpen ? closeMenu() : openMenu();
+
+      if (menuOpen) {
+        input.consumeLook(); // don't bank look deltas while paused
+      } else {
+        player.update(dt);
+        entities.update(dt, now);
+        // Drive NPC schedules from the day/night clock so routines match the HUD
+        npcMgr.update(dt, now, player.position, dayNight.gameTime * 24);
+        water.update(dt);
+        dayNight.update(dt, player.position);
+
+        // Interaction — talk to nearby NPC
+        if (input.wasPressed('interact')) {
+          const nearby = npcMgr.getNearby(player.position);
+          if (nearby) {
+            const { name, job, line } = nearby.getDialogue(DIALOGUE);
+            showDialogue(name, job, line);
+          }
+        }
+
+        // Interact prompt — checked a few times a second, not every frame
+        _promptTimer -= dt;
+        if (_promptTimer <= 0) {
+          _promptTimer = 0.2;
+          const nearby = npcMgr.getNearby(player.position);
+          if (nearby) {
+            promptEl.innerHTML = `<b>E</b> — Talk to ${nearby.name}`;
+            promptEl.style.display = 'block';
+            interactBtn.style.background = 'rgba(255,215,0,.4)';
+          } else {
+            promptEl.style.display = 'none';
+            interactBtn.style.background = 'rgba(255,255,255,.18)';
+          }
+        }
+
+        // Chunk streaming — feed player position in voxel coords
+        loader.tick(player.position.x / VS, player.position.z / VS, VIEW_DIST);
+      }
+
+      renderer.render();
+
+      // Dialogue auto-dismiss
+      if (_dialogueTimer > 0) {
+        _dialogueTimer -= dt;
+        if (_dialogueTimer <= 0) dialogueEl.style.display = 'none';
+      }
+
+      // Area label fade
+      if (_areaTimer > 0) {
+        _areaTimer -= dt;
+        if (_areaTimer <= 0) areaEl.style.opacity = '0';
+      }
+      checkArea();
+
+      // Controls hint fade-out (paused while the menu is up)
+      if (!menuOpen && _hintTimer > 0) {
+        _hintTimer -= dt;
+        if (_hintTimer <= 0) { hintEl.style.opacity = '0'; setTimeout(() => hintEl.remove(), 1100); }
+      }
+
+      // Stats — DOM writes throttled to 4 Hz
+      _statsTimer -= dt;
+      if (_statsTimer <= 0) {
+        _statsTimer = 0.25;
+        statsEl.textContent =
+          `${fps} fps\n` +
+          `chunks: ${renderer.chunkMeshes.size}\n` +
+          `entities: ${entities.entities.length}\n` +
+          `${Math.round(player.position.x/VS-CX)},${Math.round(player.position.z/VS-CZ)}`;
+      }
+    }
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

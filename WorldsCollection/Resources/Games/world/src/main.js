@@ -1,0 +1,1934 @@
+import * as THREE from 'three';
+// Simulation imports kept for type hints and proxy-agent construction only.
+// The authoritative simulation now runs in SimulationWorker.js.
+import { World, TILE_SIZE, WORLD_WIDTH, WORLD_HEIGHT, TileType } from './simulation/World.js';
+import { Agent }             from './simulation/Agent.js';
+import { ConceptGraph }      from './simulation/ConceptGraph.js';
+import { WorldRenderer }     from './renderer/WorldRenderer.js';
+import { TerrainRenderer }   from './renderer/TerrainRenderer.js';
+import { AgentRenderer }     from './renderer/AgentRenderer.js';
+import { BuildingRenderer }  from './renderer/BuildingRenderer.js';
+import { WildHorse }         from './simulation/WildHorse.js';
+import { Predator }          from './simulation/Predator.js';
+import { WildHorseRenderer } from './renderer/WildHorseRenderer.js';
+import { SheepRenderer }     from './renderer/SheepRenderer.js';
+import { PigRenderer }       from './renderer/PigRenderer.js';
+import { HighlandCowRenderer } from './renderer/HighlandCowRenderer.js';
+import { ButterflyRenderer } from './renderer/ButterflyRenderer.js';
+import { BeeRenderer }       from './renderer/BeeRenderer.js';
+import { FlowerRenderer }    from './renderer/FlowerRenderer.js';
+import { TimeSystem }        from './systems/TimeSystem.js';
+import { WeatherSystem }     from './systems/WeatherSystem.js';
+import { MinimapRenderer }   from './renderer/MinimapRenderer.js';
+import { HistoryLog }        from './systems/HistoryLog.js';
+import { DisasterSystem }    from './systems/DisasterSystem.js';
+import { ConflictSystem }    from './systems/ConflictSystem.js';
+import { Achievements }      from './systems/Achievements.js';
+import { LineageTracker }    from './systems/LineageTracker.js';
+import { SettlementSystem }  from './systems/SettlementSystem.js';
+import { audio }             from './systems/AudioSystem.js';
+import { RabbitRenderer }   from './renderer/RabbitRenderer.js';
+import { EagleRenderer }    from './renderer/EagleRenderer.js';
+import { EcologySystem }    from './systems/EcologySystem.js';
+import { AnimalSkillSystem } from './systems/AnimalSkillSystem.js';
+import { createFrogs }       from './simulation/Frog.js';
+import { FrogRenderer }      from './renderer/FrogRenderer.js';
+import { InsectSwarmRenderer } from './renderer/InsectSwarmRenderer.js';
+import { RainbowRenderer }    from './renderer/RainbowRenderer.js';
+import { FishShoal, initFishShoals } from './simulation/FishShoal.js';
+import { PopulationManager } from './simulation/PopulationManager.js';
+import { Wolf, createWolfPack } from './simulation/Wolf.js';
+import { Deer }                 from './simulation/Deer.js';
+import { Fox }                  from './simulation/Fox.js';
+import { Whale, createWhales }  from './simulation/Whale.js';
+import { WolfRenderer }         from './renderer/WolfRenderer.js';
+import { DeerRenderer }         from './renderer/DeerRenderer.js';
+import { FoxRenderer as FoxRnd } from './renderer/FoxRenderer.js';
+import { WhaleRenderer }        from './renderer/WhaleRenderer.js';
+import { RobinRenderer }        from './renderer/RobinRenderer.js';
+
+// ── Web Worker: authoritative simulation runs off-main-thread ──────────────
+const simWorker = new Worker(
+  new URL('./workers/SimulationWorker.js', import.meta.url),
+  { type: 'module' }
+);
+
+// Pending inputs to flush to the worker each tick
+let pendingInputs = [];
+// Latest worker state snapshot (written by onmessage, read by renderer each frame)
+let latestWorkerState = null;
+// Whether the worker has finished its INIT
+let workerReady = false;
+
+// CAD-163: initial agent count derived from carrying capacity (target 80+)
+// Computed after world init below — see initAgentCount
+const WILD_HORSE_COUNT = 4;
+const PREDATOR_COUNT = 3;
+
+// ── Error handling ──────────────────────────────────────────────────────────
+
+function showError(msg, err) {
+  try {
+    const banner = document.getElementById('error-banner');
+    const el = document.getElementById('error-message');
+    if (banner && el) {
+      el.textContent = typeof msg === 'string' ? msg : String(msg);
+      banner.classList.remove('hidden');
+    }
+    console.error('[World]', msg, err ?? '');
+  } catch (e) {
+    console.error('[World] showError failed', e);
+  }
+}
+
+function hideError() {
+  const banner = document.getElementById('error-banner');
+  if (banner) banner.classList.add('hidden');
+}
+
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+
+async function init() {
+  let conceptsData;
+  try {
+    const res = await fetch('./data/concepts.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    conceptsData = await res.json();
+    if (!Array.isArray(conceptsData)) throw new Error('concepts.json must be an array');
+  } catch (e) {
+    showError('Could not load concepts.json – run via a local server', e);
+    const loadingText = document.getElementById('loading-text');
+    if (loadingText) loadingText.textContent = 'Error: run via python -m http.server 8080';
+    return;
+  }
+
+  // Load item definitions
+  let itemDefs = new Map();
+  try {
+    const itemRes = await fetch('./data/items.json');
+    if (itemRes.ok) {
+      const itemsData = await itemRes.json();
+      for (const item of itemsData) itemDefs.set(item.id, item);
+    }
+  } catch (e) {
+    console.warn('Could not load items.json, inventory system disabled:', e);
+  }
+
+  const canvas = document.getElementById('world-canvas');
+  if (!canvas) {
+    showError('Canvas element not found');
+    return;
+  }
+
+  let world; let conceptGraph; let terrainRenderer; let ar; let buildingRenderer; let time; let weather;
+  let horses = [];
+  let horseRenderer;
+  let predators = [];
+  let butterflyRenderer;
+  let beeRenderer;
+  let sheepRenderer;
+  let highlandCowRenderer;
+  let flowerRenderer;
+  let rabbitRenderer;
+  let eagleRenderer;
+  let pigRenderer;
+  let frogRenderer;
+  let insectSwarmRenderer;
+  let frogs = [];
+  let rainbowRenderer;
+  let wolfPack = [];
+  let wolfRenderer;
+  let deer = [];
+  let deerRenderer;
+  let foxes = [];
+  let foxRenderer2;
+  let whales = [];
+  let whaleRenderer;
+  let robinRenderer;
+  try {
+  world = new World();
+  world.naturalFires = new Map();
+  // CAD-163: dynamic initial population based on carrying capacity (target 80+)
+  const initAgentCount = Math.min(80, Math.max(20, Math.floor(world.getCarryingCapacity())));
+  let lightningCooldown = 0;
+  conceptGraph = new ConceptGraph(conceptsData);
+  // Proxy agents array — populated from worker STATE messages, not local construction.
+  const agents = [];
+
+  // ── Send INIT to simulation worker ────────────────────────────────────
+  {
+    const itemsArr = [...itemDefs.values()];
+    simWorker.postMessage({
+      type: 'INIT',
+      seed: world.seed,
+      agentCount: initAgentCount, // CAD-163: dynamic population
+      conceptsData,
+      itemsData: itemsArr,
+      // Worker has no localStorage — seed it with the persisted unlocks
+      unlockedAchievements: [...new Achievements().unlocked],
+    });
+  }
+
+  const wr = new WorldRenderer(canvas);
+  terrainRenderer = new TerrainRenderer(wr.scene, world);
+  terrainRenderer.buildInitial(wr.camera);
+  ar = new AgentRenderer(wr.scene, agents, world);
+  buildingRenderer = new BuildingRenderer(wr.scene, world);
+  horses = world.getWildHorseSpawnPoints(WILD_HORSE_COUNT).map(p => new WildHorse(p.x, p.z));
+  horseRenderer     = new WildHorseRenderer(wr.scene, horses, world);
+  sheepRenderer     = new SheepRenderer(wr.scene, world);
+  predators = world.getWildHorseSpawnPoints(PREDATOR_COUNT).map(p => new Predator(p.x, p.z, Math.random() < 0.7 ? 'wolf' : 'bear'));
+  pigRenderer     = new PigRenderer(wr.scene, world);
+  highlandCowRenderer = new HighlandCowRenderer(wr.scene, world);
+  butterflyRenderer = new ButterflyRenderer(wr.scene, world);
+  beeRenderer       = new BeeRenderer(wr.scene, world);
+  flowerRenderer    = new FlowerRenderer(wr.scene, world);
+  rabbitRenderer    = new RabbitRenderer(wr.scene, world);
+  eagleRenderer     = new EagleRenderer(wr.scene, world);
+  frogs             = createFrogs(world);        // CAD-95
+  frogRenderer      = new FrogRenderer(wr.scene, frogs, world);
+  insectSwarmRenderer = new InsectSwarmRenderer(wr.scene, world); // CAD-92
+
+  // Wolf / Deer / Fox / Whale renderers (pure-renderer side; simulation runs in worker)
+  {
+    const packSpawn = world.getWildHorseSpawnPoints(1)[0] ?? { x: world.width / 2, z: world.height / 2 };
+    wolfPack    = createWolfPack(packSpawn.x, packSpawn.z);
+    wolfRenderer = new WolfRenderer(wr.scene, wolfPack, world);
+
+    const deerSpawns = world.getWildHorseSpawnPoints(5);
+    deer        = deerSpawns.map(p => new Deer(p.x, p.z));
+    deerRenderer = new DeerRenderer(wr.scene, deer, world);
+
+    const foxSpawns = world.getWildHorseSpawnPoints(6);
+    foxes       = foxSpawns.map(p => new Fox(p.x, p.z));
+    foxRenderer2 = new FoxRnd(wr.scene, foxes, world);
+
+    whales       = createWhales(world);
+    whaleRenderer = new WhaleRenderer(wr.scene, whales, world);
+    robinRenderer = new RobinRenderer(wr.scene, world);
+  }
+
+  time = new TimeSystem();
+  weather = new WeatherSystem(world.width, world.height);
+  rainbowRenderer = new RainbowRenderer(wr.scene, weather); // CAD-121
+
+  // ── Simulation systems ─────────────────────────────────────────────────
+  const disasterSystem   = new DisasterSystem();
+  const ecologySystem    = new EcologySystem();
+  const animalSkillSystem = new AnimalSkillSystem(); // CAD-87
+
+  // CAD-197: Fish shoals — 3-5 shoals in shallow water zones
+  let fishShoals = initFishShoals(world);
+
+  // CAD-192: Population manager — tracks extinctions and carries reintroduction logic
+  const populationManager = new PopulationManager(world);
+  const achievements     = new Achievements();
+  const lineageTracker   = new LineageTracker();
+  const settlementSystem = new SettlementSystem();
+
+  // ── Minimap & History Log ──────────────────────────────────────────────
+  const minimap = new MinimapRenderer(world);
+  const historyLog = new HistoryLog();
+
+  // Display current seed
+  const seedEl = document.getElementById('world-seed');
+  if (seedEl) seedEl.textContent = 'Seed: ' + world.seed;
+
+  // ── Fade out loading screen ───────────────────────────────────────────
+  const loading = document.getElementById('loading');
+  loading.classList.add('fade-out');
+  loading.addEventListener('transitionend', () => loading.remove(), { once: true });
+
+  // ── Speed controls ─────────────────────────────────────────────────────
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const speed = Number(btn.dataset.speed);
+      time.setSpeed(speed);
+      // Mirror speed change to simulation worker
+      simWorker.postMessage({ type: 'SET_SPEED', speed });
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // ── Info panel ─────────────────────────────────────────────────────────
+  let selectedAgent = null;
+  let selectedTile  = null;
+  let gameOver = false;
+  let gameOverAutoResetId = null;
+
+  // ── Follow mode (CAD-156) ───────────────────────────────────────────────
+  let followTarget = null;
+
+  function setFollowTarget(agent) {
+    followTarget = agent || null;
+    const btn = document.getElementById('follow-btn');
+    if (btn) btn.classList.toggle('active', !!followTarget);
+  }
+
+  // Escape cancels follow mode
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') setFollowTarget(null);
+  });
+
+  document.getElementById('info-close').addEventListener('click', () => {
+    if (selectedAgent) selectedAgent.selected = false;
+    selectedAgent = null;
+    selectedTile  = null;
+    setFollowTarget(null);
+    document.getElementById('info-panel').classList.add('hidden');
+  });
+
+  // ── Stats (persisted to localStorage) ────────────────────────────────────
+  const STATS_KEY = 'world-game-stats';
+  const stats = (() => {
+    try {
+      const raw = localStorage.getItem(STATS_KEY);
+      if (raw) return { ...{ gameOvers: 0, worldsPlayed: 0, totalBirths: 0, longestSurvival: 0, peakPopulation: 0, bestDiscoveries: 0 }, ...JSON.parse(raw) };
+    } catch (_) {}
+    return { gameOvers: 0, worldsPlayed: 0, totalBirths: 0, longestSurvival: 0, peakPopulation: 0, bestDiscoveries: 0 };
+  })();
+  function saveStats() {
+    try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (_) {}
+  }
+  function updateStatsDisplay() {
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('stat-game-overs', stats.gameOvers);
+    set('stat-worlds', stats.worldsPlayed);
+    set('stat-births', stats.totalBirths);
+    set('stat-days', stats.longestSurvival > 0 ? `Day ${stats.longestSurvival}` : '—');
+    set('stat-peak', stats.peakPopulation);
+    set('stat-discoveries', stats.bestDiscoveries);
+  }
+
+  // ── Hamburger / settings ───────────────────────────────────────────────
+  const hamburgerBtn  = document.getElementById('hamburger-btn');
+  const settingsPanel = document.getElementById('settings-panel');
+  const popSlider     = document.getElementById('pop-slider');
+  const popValue      = document.getElementById('pop-value');
+  const maxPopSlider  = document.getElementById('max-pop-slider');
+  const maxPopValue   = document.getElementById('max-pop-value');
+
+  popSlider.addEventListener('input', () => {
+    popValue.textContent = popSlider.value;
+  });
+  maxPopSlider.addEventListener('input', () => {
+    maxPopValue.textContent = maxPopSlider.value;
+  });
+
+  hamburgerBtn.addEventListener('click', () => {
+    const isOpen = !settingsPanel.classList.contains('hidden');
+    settingsPanel.classList.toggle('hidden', isOpen);
+    hamburgerBtn.classList.toggle('open', !isOpen);
+    if (!isOpen) {
+      updateStatsDisplay();
+      renderAchievements();
+    }
+  });
+
+  // ── Achievements panel ─────────────────────────────────────────────────
+  function renderAchievements() {
+    const list = document.getElementById('achievements-list');
+    if (!list) return;
+    list.replaceChildren(...Achievements.ACHIEVEMENTS.map(a => {
+      const unlocked = achievements.isUnlocked(a.id);
+      const row = document.createElement('div');
+      row.className = 'achievement-row' + (unlocked ? '' : ' locked');
+      const title = document.createElement('div');
+      title.className = 'achievement-title';
+      title.textContent = `${unlocked ? a.icon : '🔒'} ${a.title}`;
+      const desc = document.createElement('div');
+      desc.className = 'achievement-desc';
+      desc.textContent = a.description;
+      row.append(title, desc);
+      return row;
+    }));
+  }
+
+  // Close settings if user clicks outside it
+  document.addEventListener('click', e => {
+    if (!settingsPanel.contains(e.target) && e.target !== hamburgerBtn) {
+      settingsPanel.classList.add('hidden');
+      hamburgerBtn.classList.remove('open');
+    }
+  });
+
+  function resetWorld() {
+    try {
+    terrainRenderer.dispose();
+    ar.dispose();
+    buildingRenderer.dispose();
+    horseRenderer?.dispose();
+    sheepRenderer?.dispose();
+    highlandCowRenderer?.dispose();
+    butterflyRenderer?.dispose();
+    beeRenderer?.dispose();
+    flowerRenderer?.dispose();
+    rabbitRenderer?.dispose();
+    eagleRenderer?.dispose();
+    pigRenderer?.dispose();
+    frogRenderer?.dispose();         // CAD-95
+    insectSwarmRenderer?.dispose();  // CAD-92
+    wolfRenderer?.dispose();
+    deerRenderer?.dispose();
+    foxRenderer2?.dispose();
+    whaleRenderer?.dispose();
+    robinRenderer?.dispose();
+
+    world = new World();
+    world.naturalFires = new Map();
+    lightningCooldown = 0;
+    conceptGraph = new ConceptGraph(conceptsData);
+    agents.length = 0;
+    // Proxy agents repopulated from worker INIT_COMPLETE message
+
+    terrainRenderer = new TerrainRenderer(wr.scene, world);
+    // Don't call buildInitial here — wait for INIT_COMPLETE from worker
+    ar = new AgentRenderer(wr.scene, agents, world);
+
+    // ── Send RESET to simulation worker ────────────────────────────────
+    workerReady = false;
+    const startPop = Number(popSlider.value);
+    simWorker.postMessage({
+      type: 'RESET',
+      seed: world.seed,
+      agentCount: startPop,
+      conceptsData,
+      unlockedAchievements: [...achievements.unlocked],
+    });
+    buildingRenderer = new BuildingRenderer(wr.scene, world);
+    horses.length = 0;
+    world.getWildHorseSpawnPoints(WILD_HORSE_COUNT).forEach(p => horses.push(new WildHorse(p.x, p.z)));
+    horseRenderer     = new WildHorseRenderer(wr.scene, horses, world);
+    sheepRenderer     = new SheepRenderer(wr.scene, world);
+    pigRenderer       = new PigRenderer(wr.scene, world);
+    highlandCowRenderer = new HighlandCowRenderer(wr.scene, world);
+    butterflyRenderer = new ButterflyRenderer(wr.scene, world);
+    beeRenderer       = new BeeRenderer(wr.scene, world);
+    flowerRenderer    = new FlowerRenderer(wr.scene, world);
+    rabbitRenderer    = new RabbitRenderer(wr.scene, world);
+    eagleRenderer     = new EagleRenderer(wr.scene, world);
+    frogs             = createFrogs(world);         // CAD-95
+    frogRenderer      = new FrogRenderer(wr.scene, frogs, world);
+    insectSwarmRenderer = new InsectSwarmRenderer(wr.scene, world); // CAD-92
+    robinRenderer     = new RobinRenderer(wr.scene, world);
+    animalSkillSystem.clear(); // CAD-87
+    {
+      const packSpawn = world.getWildHorseSpawnPoints(1)[0] ?? { x: world.width / 2, z: world.height / 2 };
+      wolfPack.length = 0;
+      createWolfPack(packSpawn.x, packSpawn.z).forEach(w => wolfPack.push(w));
+      wolfRenderer  = new WolfRenderer(wr.scene, wolfPack, world);
+      deer.length   = 0;
+      world.getWildHorseSpawnPoints(5).forEach(p => deer.push(new Deer(p.x, p.z)));
+      deerRenderer  = new DeerRenderer(wr.scene, deer, world);
+      foxes.length  = 0;
+      world.getWildHorseSpawnPoints(6).forEach(p => foxes.push(new Fox(p.x, p.z)));
+      foxRenderer2  = new FoxRnd(wr.scene, foxes, world);
+      whales.length = 0;
+      createWhales(world).forEach(w => whales.push(w));
+      whaleRenderer = new WhaleRenderer(wr.scene, whales, world);
+    }
+
+    // CAD-197: reinitialise fish shoals for new world
+    fishShoals = initFishShoals(world);
+
+    // CAD-192: reset population manager state for new world
+    populationManager.world = world;
+    populationManager.extinct.clear();
+    populationManager._horsesEverSpawned = false;
+
+    time.gameTime = (8 / 24) * 120; // reset to 08:00
+    birthGameTimes.length = 0;
+    populationHistory.length = 0; _lastPopDay = -1;
+    for (const k of Object.keys(heatmap)) delete heatmap[k];
+    weather.current = 'CLEAR';
+    weather._timer  = 0;
+    weather.rainbow = false; weather._rainbowTimer = 0; // CAD-121
+    gameOver = false;
+    if (gameOverAutoResetId) {
+      clearTimeout(gameOverAutoResetId);
+      gameOverAutoResetId = null;
+    }
+    if (selectedAgent) selectedAgent.selected = false;
+    selectedAgent = null;
+    selectedTile  = null;
+    document.getElementById('info-panel').classList.add('hidden');
+    document.getElementById('game-over').classList.add('hidden');
+    settingsPanel.classList.add('hidden');
+    hamburgerBtn.classList.remove('open');
+
+    stats.worldsPlayed++;
+    saveStats();
+
+    minimap.world = world;
+    minimap._renderTerrain();
+    historyLog.entries.length = 0;
+    if (seedEl) seedEl.textContent = 'Seed: ' + world.seed;
+
+    showNotification('A new world begins...', 'env');
+    } catch (e) {
+      showError('Reset failed', e);
+    }
+  }
+
+  document.getElementById('reset-btn').addEventListener('click', resetWorld);
+  document.getElementById('game-over-reset').addEventListener('click', resetWorld);
+
+  // ── Seed input UI ─────────────────────────────────────────────────────
+  const seedBtn = document.getElementById('seed-btn');
+  const seedInput = document.getElementById('seed-input');
+  if (seedBtn && seedInput) {
+    seedBtn.addEventListener('click', () => {
+      const val = Number(seedInput.value);
+      if (!isNaN(val) && val >= 0) {
+        // Dispose and rebuild world with custom seed
+        terrainRenderer.dispose();
+        ar.dispose();
+        buildingRenderer.dispose();
+        horseRenderer?.dispose();
+        sheepRenderer?.dispose();
+        pigRenderer?.dispose();
+        highlandCowRenderer?.dispose();
+        butterflyRenderer?.dispose();
+        beeRenderer?.dispose();
+        flowerRenderer?.dispose();
+        rabbitRenderer?.dispose();
+        eagleRenderer?.dispose();
+        frogRenderer?.dispose();
+        insectSwarmRenderer?.dispose();
+        wolfRenderer?.dispose();
+        deerRenderer?.dispose();
+        foxRenderer2?.dispose();
+        whaleRenderer?.dispose();
+        robinRenderer?.dispose();
+
+        world = new World(val);
+        world.naturalFires = new Map();
+        lightningCooldown = 0;
+        conceptGraph = new ConceptGraph(conceptsData);
+        agents.length = 0;
+        const startPop = Number(popSlider.value);
+        world.getSpawnPoints(startPop).forEach(p => agents.push(new Agent(p.x, p.z)));
+        agents.forEach(a => ConflictSystem.assignFaction(a));
+
+        terrainRenderer = new TerrainRenderer(wr.scene, world);
+        terrainRenderer.buildInitial(wr.camera);
+        ar = new AgentRenderer(wr.scene, agents, world);
+        buildingRenderer = new BuildingRenderer(wr.scene, world);
+        horses.length = 0;
+        world.getWildHorseSpawnPoints(WILD_HORSE_COUNT).forEach(p => horses.push(new WildHorse(p.x, p.z)));
+        horseRenderer     = new WildHorseRenderer(wr.scene, horses, world);
+        sheepRenderer     = new SheepRenderer(wr.scene, world);
+        pigRenderer       = new PigRenderer(wr.scene, world);
+        highlandCowRenderer = new HighlandCowRenderer(wr.scene, world);
+        butterflyRenderer = new ButterflyRenderer(wr.scene, world);
+        beeRenderer       = new BeeRenderer(wr.scene, world);
+        flowerRenderer    = new FlowerRenderer(wr.scene, world);
+        rabbitRenderer    = new RabbitRenderer(wr.scene, world);
+        eagleRenderer     = new EagleRenderer(wr.scene, world);
+        frogs             = createFrogs(world);
+        frogRenderer      = new FrogRenderer(wr.scene, frogs, world);
+        insectSwarmRenderer = new InsectSwarmRenderer(wr.scene, world);
+        robinRenderer     = new RobinRenderer(wr.scene, world);
+        animalSkillSystem.clear();
+        {
+          const ps = world.getWildHorseSpawnPoints(1)[0] ?? { x: world.width / 2, z: world.height / 2 };
+          wolfPack.length = 0;
+          createWolfPack(ps.x, ps.z).forEach(w => wolfPack.push(w));
+          wolfRenderer  = new WolfRenderer(wr.scene, wolfPack, world);
+          deer.length   = 0;
+          world.getWildHorseSpawnPoints(5).forEach(p => deer.push(new Deer(p.x, p.z)));
+          deerRenderer  = new DeerRenderer(wr.scene, deer, world);
+          foxes.length  = 0;
+          world.getWildHorseSpawnPoints(6).forEach(p => foxes.push(new Fox(p.x, p.z)));
+          foxRenderer2  = new FoxRnd(wr.scene, foxes, world);
+          whales.length = 0;
+          createWhales(world).forEach(w => whales.push(w));
+          whaleRenderer = new WhaleRenderer(wr.scene, whales, world);
+        }
+
+        minimap.world = world;
+        minimap._renderTerrain();
+        historyLog.entries.length = 0;
+
+        time.gameTime = (8 / 24) * 120;
+        birthGameTimes.length = 0;
+        populationHistory.length = 0; _lastPopDay = -1;
+        for (const k of Object.keys(heatmap)) delete heatmap[k];
+        weather.current = 'CLEAR';
+        weather._timer  = 0;
+        gameOver = false;
+        if (gameOverAutoResetId) { clearTimeout(gameOverAutoResetId); gameOverAutoResetId = null; }
+        if (selectedAgent) selectedAgent.selected = false;
+        selectedAgent = null;
+        selectedTile  = null;
+        document.getElementById('info-panel').classList.add('hidden');
+        document.getElementById('game-over').classList.add('hidden');
+
+        if (seedEl) seedEl.textContent = 'Seed: ' + world.seed;
+        seedInput.value = '';
+        showNotification('New world from seed ' + val, 'env');
+      }
+    });
+  }
+
+  // ── Save / Load ───────────────────────────────────────────────────────
+  const SAVE_KEY = 'world-save';
+  document.addEventListener('keydown', e => {
+    // Ctrl+S to save
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      try {
+        const saveData = world.serialize(agents, conceptGraph, time.gameTime, { current: weather.current, timer: weather._timer });
+        localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+        showNotification('World saved!', 'env');
+      } catch (err) {
+        console.error('Save failed', err);
+        showNotification('Save failed.', 'env');
+      }
+    }
+    // Ctrl+L to load
+    if (e.ctrlKey && e.key === 'l') {
+      e.preventDefault();
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) { showNotification('No save found.', 'env'); return; }
+        const saveData = JSON.parse(raw);
+
+        terrainRenderer.dispose();
+        ar.dispose();
+        buildingRenderer.dispose();
+        horseRenderer?.dispose();
+        sheepRenderer?.dispose();
+        pigRenderer?.dispose();
+        highlandCowRenderer?.dispose();
+        butterflyRenderer?.dispose();
+        beeRenderer?.dispose();
+        flowerRenderer?.dispose();
+        rabbitRenderer?.dispose();
+        eagleRenderer?.dispose();
+        frogRenderer?.dispose();
+        insectSwarmRenderer?.dispose();
+        wolfRenderer?.dispose();
+        deerRenderer?.dispose();
+        foxRenderer2?.dispose();
+        whaleRenderer?.dispose();
+        robinRenderer?.dispose();
+
+        world = World.deserialize(saveData);
+        world.naturalFires = new Map();
+        lightningCooldown = 0;
+        conceptGraph = new ConceptGraph(conceptsData);
+        if (saveData.conceptGraph && conceptGraph.deserialize) {
+          conceptGraph.deserialize(saveData.conceptGraph);
+        }
+        agents.length = 0;
+        if (saveData.agents) {
+          for (const ad of saveData.agents) {
+            const a = new Agent(ad.x, ad.z);
+            a.health = ad.health ?? 1;
+            // Restore the fields serialize() saves (name/age/needs/task were dropped before)
+            if (ad.name) a.name = ad.name;
+            if (ad.age != null) a.age = ad.age;
+            if (ad.maxAge != null) a.maxAge = ad.maxAge;
+            if (ad.needs) a.needs = { ...a.needs, ...ad.needs };
+            if (ad.task) a.task = ad.task;
+            a.infected = ad.infected ?? false;
+            a.infectionTimer = ad.infectionTimer ?? 0;
+            a.infectionDuration = ad.infectionDuration ?? 60;
+            a.immuneTimer = ad.immuneTimer ?? 0;
+            if (ad.knowledge) ad.knowledge.forEach(k => a.knowledge.add(k));
+            if (ad.inventory?.deserialize) a.inventory.deserialize(ad.inventory);
+            ConflictSystem.assignFaction(a);
+            agents.push(a);
+          }
+        }
+
+        terrainRenderer = new TerrainRenderer(wr.scene, world);
+        terrainRenderer.buildInitial(wr.camera);
+        ar = new AgentRenderer(wr.scene, agents, world);
+        buildingRenderer = new BuildingRenderer(wr.scene, world);
+        horses.length = 0;
+        world.getWildHorseSpawnPoints(WILD_HORSE_COUNT).forEach(p => horses.push(new WildHorse(p.x, p.z)));
+        horseRenderer     = new WildHorseRenderer(wr.scene, horses, world);
+        sheepRenderer     = new SheepRenderer(wr.scene, world);
+        pigRenderer       = new PigRenderer(wr.scene, world);
+        highlandCowRenderer = new HighlandCowRenderer(wr.scene, world);
+        butterflyRenderer = new ButterflyRenderer(wr.scene, world);
+        beeRenderer       = new BeeRenderer(wr.scene, world);
+        flowerRenderer    = new FlowerRenderer(wr.scene, world);
+        rabbitRenderer    = new RabbitRenderer(wr.scene, world);
+        eagleRenderer     = new EagleRenderer(wr.scene, world);
+        frogs             = createFrogs(world);
+        frogRenderer      = new FrogRenderer(wr.scene, frogs, world);
+        insectSwarmRenderer = new InsectSwarmRenderer(wr.scene, world);
+        robinRenderer     = new RobinRenderer(wr.scene, world);
+        animalSkillSystem.clear();
+        {
+          const ps = world.getWildHorseSpawnPoints(1)[0] ?? { x: world.width / 2, z: world.height / 2 };
+          wolfPack.length = 0;
+          createWolfPack(ps.x, ps.z).forEach(w => wolfPack.push(w));
+          wolfRenderer  = new WolfRenderer(wr.scene, wolfPack, world);
+          deer.length   = 0;
+          world.getWildHorseSpawnPoints(5).forEach(p => deer.push(new Deer(p.x, p.z)));
+          deerRenderer  = new DeerRenderer(wr.scene, deer, world);
+          foxes.length  = 0;
+          world.getWildHorseSpawnPoints(6).forEach(p => foxes.push(new Fox(p.x, p.z)));
+          foxRenderer2  = new FoxRnd(wr.scene, foxes, world);
+          whales.length = 0;
+          createWhales(world).forEach(w => whales.push(w));
+          whaleRenderer = new WhaleRenderer(wr.scene, whales, world);
+        }
+
+        minimap.world = world;
+        minimap._renderTerrain();
+        historyLog.entries.length = 0;
+
+        if (saveData.gameTime) time.gameTime = saveData.gameTime;
+        if (saveData.weatherState) {
+          weather.current = saveData.weatherState.current ?? 'CLEAR';
+          weather._timer  = saveData.weatherState.timer ?? 0;
+        }
+        birthGameTimes.length = 0;
+        gameOver = false;
+        if (gameOverAutoResetId) { clearTimeout(gameOverAutoResetId); gameOverAutoResetId = null; }
+        if (selectedAgent) selectedAgent.selected = false;
+        selectedAgent = null;
+        selectedTile  = null;
+        document.getElementById('info-panel').classList.add('hidden');
+        document.getElementById('game-over').classList.add('hidden');
+
+        if (seedEl) seedEl.textContent = 'Seed: ' + world.seed;
+        showNotification('World loaded from save!', 'env');
+      } catch (err) {
+        console.error('Load failed', err);
+        showNotification('Load failed.', 'env');
+      }
+    }
+  });
+
+  // ── Minimap toggle (M key) ────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'm' || e.key === 'M') {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      minimap.visible = !minimap.visible;
+      minimap.canvas.style.display = minimap.visible ? 'block' : 'none';
+    }
+  });
+
+
+  // ── Camera controls: WASD pan, scroll zoom, click-drag, H recentre ──
+  const PAN_SPEED = TILE_SIZE * 0.5; // 0.5 tiles per frame
+  const WORLD_MAX_X = WORLD_WIDTH * TILE_SIZE;
+  const WORLD_MAX_Z = WORLD_HEIGHT * TILE_SIZE;
+  const _keysDown = new Set();
+
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (['w','a','s','d'].includes(k) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      // Don't pan if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      _keysDown.add(k);
+    }
+    if (k === 'h' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      // Recentre camera on agent centroid
+      const alive = agents.filter(a => a.health > 0);
+      if (alive.length === 0) return;
+      const cx = alive.reduce((s, a) => s + a.x * TILE_SIZE, 0) / alive.length;
+      const cz = alive.reduce((s, a) => s + a.z * TILE_SIZE, 0) / alive.length;
+      wr.controls.target.set(cx, 0, cz);
+    }
+  });
+  document.addEventListener('keyup', e => {
+    _keysDown.delete(e.key.toLowerCase());
+  });
+
+  // Middle-button or Alt+Left drag to pan
+  let _camDrag = null;
+  canvas.addEventListener('mousedown', e => {
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault();
+      _camDrag = { x: e.clientX, y: e.clientY,
+        tx: wr.controls.target.x, tz: wr.controls.target.z };
+      wr.controls.enabled = false;
+    }
+  });
+  canvas.addEventListener('mousemove', e => {
+    if (!_camDrag) return;
+    // Scale drag delta to world units based on camera distance
+    const dist = wr.camera.position.distanceTo(wr.controls.target);
+    const scale = dist / 500;
+    const dx = (e.clientX - _camDrag.x) * scale;
+    const dy = (e.clientY - _camDrag.y) * scale;
+    let nx = _camDrag.tx - dx;
+    let nz = _camDrag.tz - dy;
+    nx = Math.max(0, Math.min(WORLD_MAX_X, nx));
+    nz = Math.max(0, Math.min(WORLD_MAX_Z, nz));
+    wr.controls.target.set(nx, 0, nz);
+  });
+  canvas.addEventListener('mouseup', e => {
+    if (_camDrag) {
+      _camDrag = null;
+      wr.controls.enabled = true;
+    }
+  });
+
+  const errDismiss = document.getElementById('error-dismiss');
+  if (errDismiss) errDismiss.addEventListener('click', hideError);
+
+  window.onerror = (msg, source, line, col, err) => {
+    showError(msg || 'An unexpected error occurred', err);
+    return true;
+  };
+  window.onunhandledrejection = (e) => {
+    showError(e.reason?.message || 'Promise rejected', e.reason);
+  };
+
+  // ── Discoveries modal ─────────────────────────────────────────────────
+  const discoveriesModal = document.getElementById('discoveries-modal');
+  document.getElementById('discoveries-modal-close').addEventListener('click', () => {
+    discoveriesModal.classList.add('hidden');
+  });
+  discoveriesModal.addEventListener('click', e => {
+    if (e.target === discoveriesModal) discoveriesModal.classList.add('hidden');
+  });
+  document.addEventListener('click', e => {
+    if (e.target?.id === 'discoveries-view-all' || e.target?.closest('#discoveries-view-all')) {
+      const discovered = window._lastDiscovered ?? [];
+      const alive = window._lastAlive ?? 0;
+      const modalList = document.getElementById('discoveries-modal-list');
+      modalList.innerHTML = discovered.map(c =>
+        `<div class="concept-item">
+          <span class="concept-dot"></span>
+          <span>${c.icon ?? ''} ${c.name}</span>
+          <span class="concept-spread">${c.knownCount}/${alive}</span>
+        </div>`
+      ).join('');
+      discoveriesModal.classList.remove('hidden');
+    }
+  });
+
+  // ── Click detection ────────────────────────────────────────────────────
+  // We raycast to the ground plane (y=0) to get a world position, then
+  // find the nearest live agent within a generous pick radius. This is far
+  // more reliable than trying to intersect tiny capsule meshes.
+  const raycaster   = new THREE.Raycaster();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const groundPoint = new THREE.Vector3();
+  const PICK_RADIUS = TILE_SIZE * 1.5; // 3 world-units ≈ 1.5 tiles
+  let mouseDownAt  = null;
+  let dragAgent    = null;  // agent being dragged
+  let isDragging   = false; // true once mouse moves >5px with dragAgent
+
+  const findNearestAgent = (wx, wz) => {
+    let hit = null, bestDist = PICK_RADIUS;
+    for (const agent of agents) {
+      if (agent.health <= 0) continue;
+      const dist = Math.hypot(wx - agent.x * TILE_SIZE, wz - agent.z * TILE_SIZE);
+      if (dist < bestDist) { bestDist = dist; hit = agent; }
+    }
+    return hit;
+  };
+
+  canvas.addEventListener('mousedown', e => {
+    mouseDownAt = { x: e.clientX, y: e.clientY };
+    // Check if clicking near an agent (may become a drag)
+    const ndc = wr.getNDC(e);
+    raycaster.setFromCamera(ndc, wr.camera);
+    if (raycaster.ray.intersectPlane(groundPlane, groundPoint)) {
+      dragAgent  = findNearestAgent(groundPoint.x, groundPoint.z);
+      isDragging = false;
+      // Suppress OrbitControls when mousedown lands on an agent so map doesn't pan
+      if (dragAgent) wr.controls.enabled = false;
+    }
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (!mouseDownAt || !dragAgent) return;
+    const dx = e.clientX - mouseDownAt.x;
+    const dy = e.clientY - mouseDownAt.y;
+    if (!isDragging && Math.hypot(dx, dy) > 5) isDragging = true;
+    if (isDragging) {
+      const ndc = wr.getNDC(e);
+      raycaster.setFromCamera(ndc, wr.camera);
+      if (raycaster.ray.intersectPlane(groundPlane, groundPoint)) {
+        dragAgent.x       = groundPoint.x / TILE_SIZE;
+        dragAgent.z       = groundPoint.z / TILE_SIZE;
+        dragAgent.targetX = dragAgent.x;
+        dragAgent.targetZ = dragAgent.z;
+      }
+    }
+  });
+
+  canvas.addEventListener('mouseup', e => {
+    if (!mouseDownAt) return;
+
+    // Finish drag: snap agent to nearest valid tile
+    if (isDragging && dragAgent) {
+      const tileX = Math.round(dragAgent.x);
+      const tileZ = Math.round(dragAgent.z);
+      const tile  = world.getTile(tileX, tileZ);
+      if (tile && tile.type !== TileType.WATER && tile.type !== TileType.DEEP_WATER) {
+        dragAgent.x = tileX; dragAgent.z = tileZ;
+        dragAgent.targetX = tileX; dragAgent.targetZ = tileZ;
+      } else {
+        // Revert to last valid position (targetX/Z before drag started)
+        dragAgent.x = dragAgent.targetX; dragAgent.z = dragAgent.targetZ;
+      }
+      // Notify worker of agent teleport so simulation state stays in sync
+      simWorker.postMessage({ type: 'AGENT_DRAG', agentId: dragAgent.id, x: dragAgent.x, z: dragAgent.z });
+      wr.controls.enabled = true;
+      mouseDownAt = null; dragAgent = null; isDragging = false;
+      return;
+    }
+    // Re-enable controls if we suppressed them on mousedown (agent click, no drag)
+    if (dragAgent) wr.controls.enabled = true;
+    dragAgent  = null;
+    isDragging = false;
+
+    const dx = e.clientX - mouseDownAt.x;
+    const dy = e.clientY - mouseDownAt.y;
+    mouseDownAt = null;
+    if (Math.hypot(dx, dy) > 5) return; // was a camera drag
+
+    const ndc = wr.getNDC(e);
+    raycaster.setFromCamera(ndc, wr.camera);
+    if (!raycaster.ray.intersectPlane(groundPlane, groundPoint)) return;
+
+    // Find nearest live agent to the click position
+    const hit = findNearestAgent(groundPoint.x, groundPoint.z);
+
+    if (hit) {
+      if (selectedAgent) selectedAgent.selected = false;
+      selectedAgent = hit;
+      selectedTile  = null;
+      hit.selected = true;
+      // Auto-follow the clicked agent; clicking the same agent again cancels follow
+      if (followTarget === hit) {
+        setFollowTarget(null);
+      } else {
+        setFollowTarget(hit);
+      }
+      updateInfoPanel(hit);
+      document.getElementById('info-panel').classList.remove('hidden');
+    } else {
+      if (selectedAgent) selectedAgent.selected = false;
+      selectedAgent = null;
+      selectedTile  = null;
+      // Cancel follow when clicking empty space
+      setFollowTarget(null);
+
+      // Check for nearby animal before falling back to tile
+      const animal = terrainRenderer.hitTestAnimals(groundPoint.x, groundPoint.z);
+      if (animal) {
+        document.getElementById('info-content').innerHTML = `
+          <div class="info-name">${animal.icon} ${animal.label}</div>
+          <div class="info-state" style="opacity:.7;font-size:12px">Wildlife</div>
+          <div style="margin-top:10px;font-size:12px;opacity:.85">${animal.description}</div>
+        `;
+        document.getElementById('info-panel').classList.remove('hidden');
+      } else {
+        // Check for tile click
+        const tx = Math.floor(groundPoint.x / TILE_SIZE);
+        const tz = Math.floor(groundPoint.z / TILE_SIZE);
+        const tile = world.getTile(tx, tz);
+        if (tile) {
+          selectedTile = tile;
+          updateTileInfoPanel(tile);
+          document.getElementById('info-panel').classList.remove('hidden');
+        } else {
+          document.getElementById('info-panel').classList.add('hidden');
+        }
+      }
+    }
+  });
+
+  // ── Stats panel update (CAD-155) ──────────────────────────────────────
+  function getEraFromConcepts(discovered) {
+    const n = discovered.length;
+    if (n === 0)  return 'Stone Age';
+    if (n < 5)    return 'Early Stone Age';
+    if (n < 10)   return 'Late Stone Age';
+    if (n < 16)   return 'Bronze Age';
+    if (n < 22)   return 'Iron Age';
+    if (n < 30)   return 'Classical Age';
+    return 'Advanced Age';
+  }
+
+  function updateStatsPanel(alive, discovered) {
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('sp-population', alive);
+    set('sp-era', getEraFromConcepts(discovered));
+    set('sp-day', 'Day ' + time.day);
+    const tod = time.timeOfDay;
+    const todHours = tod * 24;
+    const hh = Math.floor(todHours).toString().padStart(2, '0');
+    const mm = Math.floor((todHours % 1) * 60).toString().padStart(2, '0');
+    set('sp-time', hh + ':' + mm);
+    set('sp-weather', weather.label);
+    // Settlement state is owned by the worker; the main-thread instance is never ticked
+    set('sp-settlements', latestWorkerState?.worldStats?.settlements ?? 0);
+  }
+
+  // ── Speech bubble (CAD-330) ────────────────────────────────────────────
+  function showSpeechBubble(agent, text) {
+    const worldPos = new THREE.Vector3(agent.x * 2, 2, agent.z * 2);
+    const screenPos = worldPos.clone().project(wr.camera);
+    if (screenPos.z > 1) return;
+    const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
+    const el = document.createElement('div');
+    el.className = 'speech-bubble';
+    el.textContent = text;
+    el.style.left = x + 'px';
+    el.style.top  = (y - 8) + 'px';
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; }, 2600);
+    setTimeout(() => { el.remove(); }, 3000);
+  }
+
+  // ── Discovery ring (CAD-331) ──────────────────────────────────────────
+  function showDiscoveryRing(agent) {
+    const worldPos = new THREE.Vector3(agent.x * 2, 2, agent.z * 2);
+    const screenPos = worldPos.clone().project(wr.camera);
+    if (screenPos.z > 1) return;
+    const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
+    const el = document.createElement('div');
+    el.className = 'discovery-ring';
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1100);
+  }
+
+  // ── HUD update (throttled) ─────────────────────────────────────────────
+  let lastHudUpdate = 0;
+  const birthGameTimes = []; // gameTime when each birth occurred
+
+  // CAD-158: Population graph history
+  const populationHistory = []; // { day, count }
+  let _lastPopDay = -1;
+
+  // CAD-162: Population heatmap grid
+  const heatmap = {}; // keyed "x,z" -> visit count
+  let _heatmapLastSecond = 0;
+
+  function updateHUD() {
+    try {
+    const now = performance.now();
+    if (now - lastHudUpdate < 500) return;
+    lastHudUpdate = now;
+
+    const aliveAgents = agents.filter(a => a?.health > 0);
+    const alive = aliveAgents.length;
+
+    // CAD-158: record population per day
+    if (time.day !== _lastPopDay) {
+      _lastPopDay = time.day;
+      populationHistory.push({ day: time.day, count: alive });
+      if (populationHistory.length > 200) populationHistory.shift();
+    }
+
+    const aliveIds = new Set(aliveAgents.map(a => a.id));
+    const hasAgriculture = aliveAgents.some(a => a.knowledge.has('agriculture'));
+    const maxPop = Number(maxPopSlider?.value ?? 100);
+    const carryingCapacity = Math.min(maxPop, Math.floor(world.getCarryingCapacity() * (hasAgriculture ? 1.25 : 1)));
+    document.getElementById('population').textContent = `${alive} / ${carryingCapacity}`;
+
+    // Replenishment rate: average births per game day (rolling 5-day window)
+    const REPLENISH_WINDOW_DAYS = 5;
+    const windowStart = time.gameTime - REPLENISH_WINDOW_DAYS * time.dayLength;
+    const recent = birthGameTimes.filter(t => t > windowStart);
+    const birthsInWindow = recent.length;
+    if (birthGameTimes.length > 200) {
+      birthGameTimes.length = 0;
+      birthGameTimes.push(...recent);
+    }
+    const elapsedDays = time.gameTime / time.dayLength;
+    const windowDays  = Math.min(REPLENISH_WINDOW_DAYS, Math.max(1, elapsedDays));
+    const replenishRate = elapsedDays >= 1
+      ? (birthsInWindow / windowDays).toFixed(2)
+      : '—';
+    document.getElementById('replenishment').textContent = `${replenishRate}/day`;
+    const timeLabels = [[0, '🌙'], [0.2, '🌅'], [0.45, '☀️'], [0.7, '🌆'], [0.9, '🌙']];
+    const tod = time.timeOfDay;
+    const timeIcon = [...timeLabels].filter(([t]) => tod >= t).pop()?.[1] ?? '☀️';
+    const todHours = tod * 24;
+    const hh = Math.floor(todHours).toString().padStart(2, '0');
+    const mm = Math.floor((todHours % 1) * 60).toString().padStart(2, '0');
+
+    document.getElementById('world-day').textContent     = `Day ${time.day}`;
+    document.getElementById('world-season').textContent  = time.season;
+    document.getElementById('world-time').textContent    = `${timeIcon} ${hh}:${mm}`;
+    document.getElementById('world-weather').textContent = weather.label;
+    document.getElementById('world-temp').textContent    = weather.tempLabel;
+
+    // CAD-122: tide indicator
+    const _totalTime = weather._totalTime ?? 0;
+    const _tideLevel = Math.sin((_totalTime / 900) * Math.PI * 2); // ~15 min period
+    const _tideEl = document.getElementById('world-tide');
+    if (_tideEl) _tideEl.textContent = _tideLevel > 0.3 ? '🌊 Tide: High' : _tideLevel < -0.3 ? '🌊 Tide: Low' : '🌊 Tide: Mid';
+
+    // ── Game over detection ───────────────────────────────────────────
+    if (!gameOver && agents.length > 0 && alive === 0) {
+      gameOver = true;
+      audio.playEvent('death');
+      historyLog.add('death', 'Civilization has fallen — all people are gone', time.day);
+      const discovered = conceptGraph.getDiscoveredConcepts(); // no filter: count all ever discovered
+      document.getElementById('game-over-stats').innerHTML =
+        `<div>Lasted <strong>Day ${time.day}</strong> — ${time.season}</div>` +
+        `<div>Peak population <strong>${agents.length}</strong></div>` +
+        `<div>Discoveries <strong>${discovered.length}</strong></div>`;
+      document.getElementById('game-over').classList.remove('hidden');
+      gameOverAutoResetId = setTimeout(resetWorld, 30000);
+
+      stats.gameOvers++;
+      stats.totalBirths += birthGameTimes.length;
+      stats.longestSurvival = Math.max(stats.longestSurvival, time.day);
+      stats.peakPopulation = Math.max(stats.peakPopulation, agents.length);
+      stats.bestDiscoveries = Math.max(stats.bestDiscoveries, discovered.length);
+      saveStats();
+    }
+
+    const discovered = conceptGraph.getDiscoveredConcepts(aliveIds);
+    const list = document.getElementById('concepts-list');
+    const MAX_VISIBLE = 3;
+    if (discovered.length === 0) {
+      list.innerHTML = '<em>None yet...</em>';
+    } else {
+      const recent = discovered.slice(-MAX_VISIBLE);
+      let html = recent.map(c =>
+        `<div class="concept-item">
+          <span class="concept-dot"></span>
+          <span>${c.icon ?? ''} ${c.name}</span>
+          <span class="concept-spread">${c.knownCount}/${alive}</span>
+        </div>`
+      ).join('');
+      if (discovered.length > MAX_VISIBLE) {
+        html += `<div class="discoveries-view-all" id="discoveries-view-all">View all (${discovered.length})</div>`;
+      }
+      list.innerHTML = html;
+    }
+    // Cache for modal
+    window._lastDiscovered = discovered;
+    window._lastAlive = alive;
+
+    if (selectedAgent && selectedAgent.health > 0) {
+      updateInfoPanel(selectedAgent);
+    } else if (selectedTile && world.getTile(selectedTile.x, selectedTile.z)) {
+      updateTileInfoPanel(world.getTile(selectedTile.x, selectedTile.z));
+    }
+
+    updateStatsPanel(alive, discovered);
+    } catch (e) {
+      console.error('[World] HUD update failed', e);
+    }
+  }
+
+  const TILE_LABELS = {
+    [TileType.DEEP_WATER]: { icon: '🌊', name: 'Deep Water' },
+    [TileType.WATER]:    { icon: '🌊', name: 'Water' },
+    [TileType.BEACH]:    { icon: '🏖️', name: 'Beach' },
+    [TileType.GRASS]:    { icon: '🌿', name: 'Grassland' },
+    [TileType.WOODLAND]: { icon: '🌳', name: 'Woodland' },
+    [TileType.DESERT]:   { icon: '🏜️', name: 'Desert' },
+    [TileType.FOREST]:   { icon: '🌲', name: 'Forest' },
+    [TileType.STONE]:    { icon: '🪨', name: 'Stone' },
+    [TileType.MOUNTAIN]: { icon: '⛰️', name: 'Mountain' },
+  };
+
+  const TILE_FEATURES = {
+    [TileType.DEEP_WATER]: 'Open ocean. Deep fish patrol these waters. Requires Sailing to cross.',
+    [TileType.WATER]:    'Coastal water. Shallow fish swim here. Requires Sailing to cross.',
+    [TileType.BEACH]:    'Sandy shore between land and sea. Crabs scuttle along the waterline.',
+    [TileType.GRASS]:    'Berries, sheep, and pigs. Good for gathering food.',
+    [TileType.WOODLAND]: 'Lightly wooded land. Herbs and mushrooms grow here. Good for foraging.',
+    [TileType.DESERT]:   'Arid, sun-baked land. Little grows here — harsh but traversable.',
+    [TileType.FOREST]:   'Trees and wild game. Rich in food and resources.',
+    [TileType.STONE]:    'Rocks and clay. Good for stone tools and pottery.',
+    [TileType.MOUNTAIN]: 'Peaks and snow. Requires Mountain Climbing to traverse.',
+  };
+
+  function updateTileInfoPanel(tile) {
+    if (!tile) return;
+    const info = TILE_LABELS[tile.type] ?? { icon: '', name: tile?.type ?? '?' };
+    const features = TILE_FEATURES[tile.type] ?? '';
+    let resourceHtml = '';
+    if (tile.type === TileType.GRASS || tile.type === TileType.WOODLAND || tile.type === TileType.FOREST) {
+      const pct = Math.round(tile.resource * 100);
+      resourceHtml = `
+        <div class="info-row" style="margin-top:10px">
+          <span class="info-label">Food</span>
+          <div class="info-bar-wrap"><div class="info-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+    }
+    // Ground items on this tile
+    let groundHtml = '';
+    const groundItems = world.tileItems?.getItems(tile.x, tile.z) ?? [];
+    if (groundItems.length > 0) {
+      groundHtml = `<div style="margin-top:8px;font-size:11px;opacity:.7">Items on ground:</div>` +
+        groundItems.map(g => {
+          const def = itemDefs.get(g.itemId);
+          return `<div style="font-size:12px;margin-top:2px">${def?.icon ?? '•'} ${def?.name ?? g.itemId} ×${g.quantity}</div>`;
+        }).join('');
+    }
+    document.getElementById('info-content').innerHTML = `
+      <div class="info-name">${info.icon} ${info.name}</div>
+      <div class="info-state" style="opacity:.7;font-size:12px">Tile (${tile.x}, ${tile.z})</div>
+      <div style="margin-top:10px;font-size:12px;opacity:.85">${features}</div>
+      ${resourceHtml}
+      ${groundHtml}
+    `;
+  }
+
+  function updateInfoPanel(agent) {
+    if (!agent) return;
+    const hunger = agent.needs?.hunger ?? 0;
+    const energy = agent.needs?.energy ?? 0;
+    const hCol = hunger < 0.3 ? 'crit' : hunger < 0.6 ? 'warn' : '';
+    const eCol = energy < 0.3 ? 'crit' : energy < 0.6 ? 'warn' : '';
+    const concepts = [...agent.knowledge].map(id => {
+      const c = conceptGraph.concepts.get(id);
+      return c ? `<span class="info-tag">${c.icon ?? ''} ${c.name}</span>` : '';
+    }).join('');
+
+    document.getElementById('info-content').innerHTML = `
+      <div class="info-name">${agent.name}</div>
+      <div class="info-state">${(agent.state || 'wandering').charAt(0).toUpperCase() + (agent.state || 'wandering').slice(1)}</div>
+      <div style="margin-top:10px">
+        <div class="info-row">
+          <span class="info-label">Hunger</span>
+          <div class="info-bar-wrap"><div class="info-bar-fill ${hCol}" style="width:${hunger * 100}%"></div></div>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Energy</span>
+          <div class="info-bar-wrap"><div class="info-bar-fill ${eCol}" style="width:${energy * 100}%"></div></div>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Age</span>
+          <span style="font-size:11px;opacity:.5">${Math.floor(agent.age)}s / ${Math.floor(agent.lifeExpectancy)}s ${agent.isAdult ? '' : '· juvenile'}${agent.ageBonus > 0 ? ` · +${Math.round(agent.ageBonus * 100)}%` : ''}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Curiosity</span>
+          <span style="font-size:11px;opacity:.5">${(agent.curiosity * 100).toFixed(0)}%</span>
+        </div>
+        ${agent.task ? `<div class="info-row"><span class="info-label">Task</span><span class="info-tag">${Agent.TASKS[agent.task]?.icon ?? '•'} ${Agent.TASKS[agent.task]?.name ?? agent.task}</span></div>` : ''}
+        ${agent.homeId ? (() => {
+          const tile = world.getTile(parseInt(agent.homeId), parseInt(agent.homeId.split(',')[1]));
+          const tileType = tile ? (tile.type.charAt(0).toUpperCase() + tile.type.slice(1)) : 'Building';
+          return `<div class="info-row"><span class="info-label">Home</span><span style="font-size:11px;opacity:.5">${tileType} at (${agent.homeId})</span></div>`;
+        })() : ''}
+        ${agent.bondedPartnerId !== null ? (() => {
+          const partner = agents.find(a => a.id === agent.bondedPartnerId);
+          return partner ? `<div class="info-row"><span class="info-label">Bonded to</span><span style="font-size:11px;opacity:.5">💕 ${partner.name}</span></div>` : '';
+        })() : ''}
+      </div>
+      ${agent.inventory.stacks.length > 0 ? `
+        <div style="margin-top:8px;font-size:11px;opacity:.7">Inventory (${agent.inventory.currentWeight(itemDefs).toFixed(1)}/${agent.inventory.maxWeight.toFixed(0)})</div>
+        <div style="margin-top:2px">${agent.inventory.stacks.map(s => {
+          const d = itemDefs.get(s.itemId);
+          return `<span class="info-tag">${d?.icon ?? '•'} ${d?.name ?? s.itemId} ×${s.quantity}</span>`;
+        }).join('')}</div>
+      ` : ''}
+      ${concepts ? `<div class="info-tags">${concepts}</div>` : '<div style="opacity:.3;font-size:12px;margin-top:10px">No discoveries yet</div>'}
+      <button id="follow-btn" class="${followTarget === agent ? 'active' : ''}"
+        onclick="window._followBtnClicked && window._followBtnClicked()">
+        ${followTarget === agent ? '📍 Unfollow' : '🎯 Follow'}
+      </button>
+    `;
+
+    // Hook the follow button
+    window._followBtnClicked = () => {
+      if (followTarget === agent) {
+        setFollowTarget(null);
+      } else {
+        setFollowTarget(agent);
+      }
+      updateInfoPanel(agent);
+    };
+  }
+
+  // ── Notifications (max 3 per type, Environmental vs Social) ───────────
+  const MAX_NOTIFICATIONS_PER_TYPE = 3;
+
+  function showNotification(msg, type = 'env') {
+    const container = document.getElementById(`notifications-${type}`);
+    if (!container) return;
+    // Spread into a real Array so length decreases as items are removed
+    const items = [...container.querySelectorAll('.notification')];
+    while (items.length >= MAX_NOTIFICATIONS_PER_TYPE) {
+      items.shift().remove();
+    }
+    const el = document.createElement('div');
+    el.className = `notification notification-${type}`;
+    el.textContent = msg;
+    container.appendChild(el);
+    el.addEventListener('animationend', () => el.remove());
+  }
+
+  // ── Chunk visibility (CAD-218) ────────────────────────────────────────
+  let _lastCamChunkX = -999;
+  let _lastCamChunkZ = -999;
+
+  function checkChunkVisibility() {
+    const cx = Math.floor(wr.camera.position.x / (TILE_SIZE * 16));
+    const cz = Math.floor(wr.camera.position.z / (TILE_SIZE * 16));
+    if (cx !== _lastCamChunkX || cz !== _lastCamChunkZ) {
+      terrainRenderer.updateVisibility(wr.camera);
+      _lastCamChunkX = cx;
+      _lastCamChunkZ = cz;
+    }
+  }
+
+  // ── Game loop ──────────────────────────────────────────────────────────
+  let lastTimestamp = null;
+
+  function frame(timestamp) {
+    requestAnimationFrame(frame);
+    try {
+    const realDelta = lastTimestamp === null ? 0 : (timestamp - lastTimestamp) / 1000;
+    lastTimestamp = timestamp;
+
+    // ── Send TICK to simulation worker ────────────────────────────────────
+    // The worker handles all simulation updates; main thread only renders + handles input.
+    const realDeltaCapped = Math.min(realDelta, 0.1);
+    if (workerReady && realDeltaCapped > 0) {
+      simWorker.postMessage({ type: 'TICK', delta: realDeltaCapped, inputs: pendingInputs.splice(0) });
+    }
+
+    // Derive delta for renderer animations from time proxy (updated by worker STATE messages)
+    const delta = time.paused ? 0 : Math.min(realDelta, 0.1) * time.speed;
+
+    // CAD-122: tide total time (proxy — worker keeps authoritative value, we mirror it)
+    if (!weather._totalTime) weather._totalTime = 0;
+
+    // ── Fire light boost at night (renderer-side effect only) ─────────────
+    {
+      const isNight = time.timeOfDay > 0.75 || time.timeOfDay < 0.25;
+      if (isNight && world.naturalFires.size > 0) {
+        if (wr._fireLights?.size) {
+          for (const { light } of wr._fireLights.values()) {
+            light.intensity = Math.max(light.intensity, 2.8);
+          }
+        }
+        if (wr._hemi) {
+          wr._hemi.intensity = Math.max(wr._hemi.intensity, 0.45);
+        }
+      }
+    }
+
+    // CAD-162: heatmap sampling (once per real second, uses proxy agent positions)
+    {
+      const _nowSec = Math.floor(performance.now() / 1000);
+      if (_nowSec !== _heatmapLastSecond) {
+        _heatmapLastSecond = _nowSec;
+        for (const agent of agents) {
+          if (agent.health <= 0) continue;
+          const hk = Math.round(agent.x) + ',' + Math.round(agent.z);
+          heatmap[hk] = (heatmap[hk] ?? 0) + 1;
+        }
+        for (const k of Object.keys(heatmap)) {
+          heatmap[k] *= 0.999;
+          if (heatmap[k] < 0.01) delete heatmap[k];
+        }
+      }
+    }
+
+    // Rendering always runs (for smooth camera)
+    // WASD camera pan
+    if (_keysDown.size > 0) {
+      const t = wr.controls.target;
+      if (_keysDown.has('w')) t.z = Math.max(0, t.z - PAN_SPEED);
+      if (_keysDown.has('s')) t.z = Math.min(WORLD_MAX_Z, t.z + PAN_SPEED);
+      if (_keysDown.has('a')) t.x = Math.max(0, t.x - PAN_SPEED);
+      if (_keysDown.has('d')) t.x = Math.min(WORLD_MAX_X, t.x + PAN_SPEED);
+    }
+
+    // ── Follow mode (CAD-156): lock camera to followed agent ─────────────────
+    if (followTarget && followTarget.health > 0) {
+      const fx = followTarget.x * 2;
+      const fz = followTarget.z * 2;
+      wr.controls.target.set(fx, 0, fz);
+    } else if (followTarget && followTarget.health <= 0) {
+      setFollowTarget(null);
+    }
+
+    wr.setTimeOfDay(time.timeOfDay);
+    wr.setWeather(weather.meta);
+    terrainRenderer.updateAnimals(delta > 0 ? delta : 0);
+    terrainRenderer.updateVegetation(world);
+    // CAD-177: Update trade path overlays and decay old traffic (throttled to once per game-second)
+    if (!terrainRenderer._tradePathTimer) terrainRenderer._tradePathTimer = 0;
+    terrainRenderer._tradePathTimer += delta;
+    if (terrainRenderer._tradePathTimer >= 2) {
+      terrainRenderer._tradePathTimer = 0;
+      world.decayTradeTraffic(time.day);
+      terrainRenderer.updateTradePaths();
+    }
+    ar.update();
+    buildingRenderer.checkAgents(agents);
+    horseRenderer?.update();
+    sheepRenderer?.update(delta > 0 ? delta : 0, predators);
+    highlandCowRenderer?.update(delta > 0 ? delta : 0);
+    pigRenderer?.update(delta > 0 ? delta : 0);
+    const isSunny = !weather.isRaining && !weather.isStorm;
+    butterflyRenderer?.update(delta > 0 ? delta : 0, isSunny);
+    beeRenderer?.update(delta > 0 ? delta : 0, isSunny);
+    flowerRenderer?.update(delta > 0 ? delta : 0, time.season);
+    rabbitRenderer?.update(delta > 0 ? delta : 0, agents); // CAD-195 fear
+    eagleRenderer?.update(delta > 0 ? delta : 0);
+    frogRenderer?.update(delta > 0 ? delta : 0);          // CAD-95
+    insectSwarmRenderer?.update(delta > 0 ? delta : 0);   // CAD-92
+    robinRenderer?.update(delta > 0 ? delta : 0);
+    rainbowRenderer?.update(realDelta);                    // CAD-121 (always real time)
+    // Wolf / Deer / Fox / Whale — tick simulation + renderer each frame
+    if (delta > 0) {
+      for (const w of wolfPack) w.tick(delta, world, agents, []);
+      for (const d of deer)     d.tick(delta, world, agents, wolfPack);
+      for (const f of foxes)    f.tick(delta, world, agents);
+      for (const wh of whales)  wh.tick(delta, world);
+    }
+    wolfRenderer?.update();
+    deerRenderer?.update();
+    foxRenderer2?.update();
+    whaleRenderer?.update(wr.camera);
+    wr.updateRain(realDelta, weather.isRaining, weather.isStorm);
+    minimap.update(agents);
+    checkChunkVisibility(); // CAD-218: load/unload terrain chunks based on camera position
+    wr.render();
+    updateHUD();
+    updateOverlays();
+    } catch (e) {
+      const msg = e?.message || e?.toString?.() || 'Game loop error';
+      showError(msg, e);
+      console.error('[World] Frame error stack:', e?.stack);
+      setTimeout(hideError, 8000);
+    }
+  }
+
+
+  // ── CAD-158: Population graph ─────────────────────────────────────────
+  let popGraphVisible = false;
+  const popGraphPanel = document.getElementById('pop-graph-panel');
+  const popGraphCanvas = document.getElementById('pop-graph');
+  const popGraphBtn    = document.getElementById('pop-graph-btn');
+  const popGraphClose  = document.getElementById('pop-graph-close');
+
+  function drawPopGraph() {
+    if (!popGraphCanvas || !popGraphVisible) return;
+    const ctx = popGraphCanvas.getContext('2d');
+    const W = popGraphCanvas.width;
+    const H = popGraphCanvas.height;
+    ctx.clearRect(0, 0, W, H);
+    if (populationHistory.length < 2) {
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Not enough data yet...', W / 2, H / 2);
+      return;
+    }
+    const maxCount = Math.max(...populationHistory.map(p => p.count), 1);
+    const pad = 6;
+    const gW = W - pad * 2;
+    const gH = H - pad * 2;
+
+    // Grid line
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad, pad + gH / 2);
+    ctx.lineTo(pad + gW, pad + gH / 2);
+    ctx.stroke();
+
+    // Line chart
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(80,220,120,0.9)';
+    ctx.lineWidth = 1.5;
+    populationHistory.forEach((p, i) => {
+      const x = pad + (i / (populationHistory.length - 1)) * gW;
+      const y = pad + gH - (p.count / maxCount) * gH;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Fill under line
+    ctx.beginPath();
+    populationHistory.forEach((p, i) => {
+      const x = pad + (i / (populationHistory.length - 1)) * gW;
+      const y = pad + gH - (p.count / maxCount) * gH;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(pad + gW, pad + gH);
+    ctx.lineTo(pad, pad + gH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(80,220,120,0.12)';
+    ctx.fill();
+
+    // Labels
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(String(maxCount), pad, pad + 9);
+    ctx.textAlign = 'right';
+    const lastDay = populationHistory[populationHistory.length - 1]?.day ?? 0;
+    ctx.fillText('Day ' + lastDay, pad + gW, pad + gH - 2);
+  }
+
+  if (popGraphBtn) popGraphBtn.addEventListener('click', () => {
+    popGraphVisible = !popGraphVisible;
+    popGraphPanel.style.display = popGraphVisible ? 'block' : 'none';
+    popGraphBtn.style.background = popGraphVisible ? 'rgba(80,220,120,0.3)' : 'rgba(255,255,255,0.1)';
+    if (popGraphVisible) drawPopGraph();
+  });
+  if (popGraphClose) popGraphClose.addEventListener('click', () => {
+    popGraphVisible = false;
+    popGraphPanel.style.display = 'none';
+    popGraphBtn.style.background = 'rgba(255,255,255,0.1)';
+  });
+
+  // ── Timeline panel ─────────────────────────────────────────────────────
+  let timelineVisible = false;
+  let _lastTimelineCount = -1;
+  const timelinePanel   = document.getElementById('timeline-panel');
+  const timelineBtn     = document.getElementById('timeline-btn');
+  const timelineClose   = document.getElementById('timeline-close');
+  const timelineContent = document.getElementById('timeline-content');
+
+  function updateTimeline() {
+    if (!timelineVisible || !timelineContent) return;
+    if (historyLog.entries.length === _lastTimelineCount) return;
+    _lastTimelineCount = historyLog.entries.length;
+    if (historyLog.entries.length === 0) {
+      timelineContent.innerHTML = '<em style="opacity:.4">Nothing has happened yet...</em>';
+      return;
+    }
+    timelineContent.replaceChildren(...historyLog.recent.slice(0, 60).map(entry => {
+      const row = document.createElement('div');
+      row.className = 'timeline-entry';
+      const msg = document.createElement('span');
+      msg.textContent = `${HistoryLog.icon(entry.type)} ${entry.message}`;
+      const day = document.createElement('span');
+      day.className = 'timeline-day';
+      day.textContent = 'Day ' + entry.day;
+      row.append(msg, day);
+      return row;
+    }));
+  }
+
+  if (timelineBtn) timelineBtn.addEventListener('click', () => {
+    timelineVisible = !timelineVisible;
+    timelinePanel.style.display = timelineVisible ? 'block' : 'none';
+    timelineBtn.style.background = timelineVisible ? 'rgba(80,220,120,0.3)' : 'rgba(255,255,255,0.1)';
+    _lastTimelineCount = -1;
+    if (timelineVisible) updateTimeline();
+  });
+  if (timelineClose) timelineClose.addEventListener('click', () => {
+    timelineVisible = false;
+    timelinePanel.style.display = 'none';
+    timelineBtn.style.background = 'rgba(255,255,255,0.1)';
+  });
+
+  // ── CAD-160: Knowledge overlay ────────────────────────────────────────
+  let knowledgeOverlayVisible = false;
+  const knowledgePanel  = document.getElementById('knowledge-overlay-panel');
+  const knowledgeBtn    = document.getElementById('knowledge-overlay-btn');
+  const knowledgeClose  = document.getElementById('knowledge-overlay-close');
+  const knowledgeContent = document.getElementById('knowledge-overlay-content');
+
+  function updateKnowledgeOverlay() {
+    if (!knowledgeOverlayVisible || !knowledgeContent) return;
+    const alive = agents.filter(a => a.health > 0);
+    if (alive.length === 0) { knowledgeContent.innerHTML = '<em style="opacity:.4">No agents alive</em>'; return; }
+
+    // Group by settlement; agents not in a settlement go to "Wanderers"
+    const grouped = {};
+    for (const agent of alive) {
+      const settlement = settlementSystem.getSettlementFor(agent);
+      const key = settlement ? (settlement.name || settlement.tier || 'Camp #' + settlement.id) : '__wanderers__';
+      if (!grouped[key]) grouped[key] = { agents: [], name: key === '__wanderers__' ? 'Wanderers' : key };
+      grouped[key].agents.push(agent);
+    }
+
+    let html = '';
+    for (const group of Object.values(grouped)) {
+      // Collect all unique knowledge across agents in this group
+      const conceptSet = new Set();
+      for (const a of group.agents) {
+        for (const k of a.knowledge) conceptSet.add(k);
+      }
+      const concepts = [...conceptSet].map(id => {
+        const c = conceptGraph.concepts.get(id);
+        return c ? (c.icon ?? '') + ' ' + c.name : id;
+      });
+      html += `<div style="margin-bottom:8px;">
+        <div style="font-weight:600;opacity:.9;margin-bottom:2px;">${group.name} <span style="opacity:.5">(${group.agents.length})</span></div>`;
+      if (concepts.length === 0) {
+        html += `<div style="opacity:.4;font-size:10px;">No discoveries</div>`;
+      } else {
+        html += `<div style="opacity:.75;line-height:1.5;">${concepts.join(', ')}</div>`;
+      }
+      html += `</div>`;
+    }
+    knowledgeContent.innerHTML = html || '<em style="opacity:.4">No settlements yet</em>';
+  }
+
+  if (knowledgeBtn) knowledgeBtn.addEventListener('click', () => {
+    knowledgeOverlayVisible = !knowledgeOverlayVisible;
+    knowledgePanel.style.display = knowledgeOverlayVisible ? 'block' : 'none';
+    knowledgeBtn.style.background = knowledgeOverlayVisible ? 'rgba(160,120,240,0.3)' : 'rgba(255,255,255,0.1)';
+    if (knowledgeOverlayVisible) updateKnowledgeOverlay();
+  });
+  if (knowledgeClose) knowledgeClose.addEventListener('click', () => {
+    knowledgeOverlayVisible = false;
+    knowledgePanel.style.display = 'none';
+    knowledgeBtn.style.background = 'rgba(255,255,255,0.1)';
+  });
+
+  // ── CAD-161: Resource overlay ─────────────────────────────────────────
+  let resourceOverlayVisible = false;
+  const resourceOverlayCanvas = document.getElementById('resource-overlay');
+  const resourceOverlayBtn    = document.getElementById('resource-overlay-btn');
+
+  function drawResourceOverlay() {
+    if (!resourceOverlayCanvas || !resourceOverlayVisible) return;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    resourceOverlayCanvas.width  = W;
+    resourceOverlayCanvas.height = H;
+    const ctx = resourceOverlayCanvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const waterTypes = new Set(['WATER', 'DEEP_WATER']);
+    const plantTypes = new Set(['GRASS', 'FOREST', 'WOODLAND']);
+
+    for (let tx = 0; tx < world.width; tx++) {
+      for (let tz = 0; tz < world.height; tz++) {
+        const tile = world.getTile(tx, tz);
+        if (!tile) continue;
+
+        let color = null;
+        if (waterTypes.has(tile.type)) {
+          color = 'rgba(40,120,220,0.22)';
+        } else if (plantTypes.has(tile.type) && tile.resource > 0.1) {
+          color = `rgba(60,200,80,${(tile.resource * 0.35).toFixed(2)})`;
+        } else {
+          continue;
+        }
+
+        // Project tile centre to screen
+        const wx = (tx + 0.5) * TILE_SIZE;
+        const wz = (tz + 0.5) * TILE_SIZE;
+        const vec = new THREE.Vector3(wx, 0, wz);
+        vec.project(wr.camera);
+        if (vec.z > 1 || vec.z < -1) continue;
+        const sx = (vec.x *  0.5 + 0.5) * W;
+        const sy = (vec.y * -0.5 + 0.5) * H;
+
+        // Approximate screen size of one tile
+        const edgeVec = new THREE.Vector3(wx + TILE_SIZE, 0, wz);
+        edgeVec.project(wr.camera);
+        const ex = (edgeVec.x * 0.5 + 0.5) * W;
+        const radius = Math.max(2, Math.abs(ex - sx) * 0.7);
+
+        ctx.beginPath();
+        ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+    }
+  }
+
+  if (resourceOverlayBtn) resourceOverlayBtn.addEventListener('click', () => {
+    resourceOverlayVisible = !resourceOverlayVisible;
+    resourceOverlayCanvas.style.display = resourceOverlayVisible ? 'block' : 'none';
+    resourceOverlayBtn.style.background = resourceOverlayVisible ? 'rgba(80,200,80,0.3)' : 'rgba(255,255,255,0.1)';
+    if (!resourceOverlayVisible) {
+      const ctx = resourceOverlayCanvas.getContext('2d');
+      ctx.clearRect(0, 0, resourceOverlayCanvas.width, resourceOverlayCanvas.height);
+    }
+  });
+
+  // ── CAD-162: Heatmap overlay ──────────────────────────────────────────
+  let heatmapOverlayVisible = false;
+  const heatmapOverlayCanvas = document.getElementById('heatmap-overlay');
+  const heatmapOverlayBtn    = document.getElementById('heatmap-overlay-btn');
+
+  function drawHeatmapOverlay() {
+    if (!heatmapOverlayCanvas || !heatmapOverlayVisible) return;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    heatmapOverlayCanvas.width  = W;
+    heatmapOverlayCanvas.height = H;
+    const ctx = heatmapOverlayCanvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const entries = Object.entries(heatmap);
+    if (entries.length === 0) return;
+    const maxVal = Math.max(...entries.map(([, v]) => v), 1);
+
+    for (const [key, val] of entries) {
+      const [tx, tz] = key.split(',').map(Number);
+      const wx = tx * TILE_SIZE;
+      const wz = tz * TILE_SIZE;
+      const vec = new THREE.Vector3(wx, 0, wz);
+      vec.project(wr.camera);
+      if (vec.z > 1 || vec.z < -1) continue;
+      const sx = (vec.x *  0.5 + 0.5) * W;
+      const sy = (vec.y * -0.5 + 0.5) * H;
+
+      const t = val / maxVal;
+      const r = Math.round(255 * Math.min(1, t * 2));
+      const g = Math.round(255 * Math.max(0, 1 - t * 2));
+      const a = (0.1 + t * 0.5).toFixed(2);
+
+      const edgeVec = new THREE.Vector3(wx + TILE_SIZE, 0, wz);
+      edgeVec.project(wr.camera);
+      const ex = (edgeVec.x * 0.5 + 0.5) * W;
+      const radius = Math.max(3, Math.abs(ex - sx));
+
+      ctx.beginPath();
+      ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${r},${g},0,${a})`;
+      ctx.fill();
+    }
+  }
+
+  if (heatmapOverlayBtn) heatmapOverlayBtn.addEventListener('click', () => {
+    heatmapOverlayVisible = !heatmapOverlayVisible;
+    heatmapOverlayCanvas.style.display = heatmapOverlayVisible ? 'block' : 'none';
+    heatmapOverlayBtn.style.background = heatmapOverlayVisible ? 'rgba(255,100,40,0.3)' : 'rgba(255,255,255,0.1)';
+    if (!heatmapOverlayVisible) {
+      const ctx = heatmapOverlayCanvas.getContext('2d');
+      ctx.clearRect(0, 0, heatmapOverlayCanvas.width, heatmapOverlayCanvas.height);
+    }
+  });
+
+  // ── Overlay render tick (called each frame after wr.render()) ─────────
+  function updateOverlays() {
+    if (popGraphVisible) drawPopGraph();
+    if (resourceOverlayVisible) drawResourceOverlay();
+    if (heatmapOverlayVisible) drawHeatmapOverlay();
+    if (knowledgeOverlayVisible) updateKnowledgeOverlay();
+    if (timelineVisible) updateTimeline();
+  }
+
+  // ── Worker message handler ─────────────────────────────────────────────
+  simWorker.onmessage = (e) => {
+    const msg = e.data;
+
+    if (msg.type === 'INIT_COMPLETE') {
+      if (msg.fullTiles && msg.fullTiles.length > 0) {
+        let i = 0;
+        for (let z = 0; z < world.height; z++) {
+          for (let x = 0; x < world.width; x++) {
+            const wt = msg.fullTiles[i++];
+            if (wt && world.tiles[z] && world.tiles[z][x]) {
+              Object.assign(world.tiles[z][x], wt);
+            }
+          }
+        }
+        terrainRenderer.buildInitial(wr.camera);
+      }
+
+      if (msg.agentState) {
+        agents.length = 0;
+        for (const ws of msg.agentState) {
+          const a = new Agent(ws.x, ws.z);
+          a.id = ws.id;
+          a.name = ws.name;
+          a.health = ws.health;
+          a.age = ws.age;
+          a.state = ws.state;
+          a.needs = { energy: ws.energy, hunger: ws.hunger };
+          a.role = ws.role;
+          a.task = ws.task;
+          a.isDead = ws.isDead;
+          a.facingX = ws.facingX;
+          a.facingZ = ws.facingZ;
+          a.discoveryFlash = ws.discoveryFlash;
+          a.lifeStage = ws.lifeStage;
+          a.faction = ws.faction;
+          a.knowledge = new Set(ws.knowledge ?? []);
+          agents.push(a);
+        }
+        ar.dispose();
+        ar = new AgentRenderer(wr.scene, agents, world);
+      }
+
+      if (msg.worldStats && time && msg.worldStats.gameTime != null) {
+        time.gameTime = msg.worldStats.gameTime;
+      }
+
+      workerReady = true;
+      if (seedEl) seedEl.textContent = 'Seed: ' + (msg.seed ?? world.seed);
+    }
+
+    else if (msg.type === 'STATE') {
+      latestWorkerState = msg;
+
+      if (msg.tileChanges?.length) {
+        for (const { x, z, type } of msg.tileChanges) {
+          const tile = world.getTile(x, z);
+          if (tile) tile.type = type;
+          terrainRenderer.markTileDirty(x, z);
+        }
+      }
+
+      if (msg.naturalFires) {
+        world.naturalFires.clear();
+        for (const { key, endTime } of msg.naturalFires) {
+          world.naturalFires.set(key, { endTime });
+        }
+      }
+
+      if (msg.worldStats && time && msg.worldStats.gameTime != null) {
+        time.gameTime = msg.worldStats.gameTime;
+      }
+      if (msg.worldStats && weather && msg.worldStats.weather) {
+        weather.current = msg.worldStats.weather;
+      }
+
+      if (msg.agents && ar) {
+        for (const ws of msg.agents) {
+          if (!agents.find(a => a.id === ws.id)) {
+            const child = new Agent(ws.x, ws.z);
+            child.id = ws.id;
+            child.name = ws.name;
+            child.health = ws.health;
+            child.age = ws.age;
+            child.state = ws.state;
+            child.needs = { energy: ws.energy, hunger: ws.hunger };
+            child.role = ws.role;
+            child.task = ws.task;
+            child.isDead = ws.isDead;
+            child.facingX = ws.facingX;
+            child.facingZ = ws.facingZ;
+            child.discoveryFlash = ws.discoveryFlash;
+            child.lifeStage = ws.lifeStage;
+            child.faction = ws.faction;
+            child.knowledge = new Set(ws.knowledge ?? []);
+            agents.push(child);
+            ar.addAgent(child);
+          }
+        }
+        ar.updateFromWorkerState(msg.agents);
+      }
+
+      if (msg.events?.length) {
+        for (const evt of msg.events) {
+          switch (evt.type) {
+            case 'weather':
+              showNotification(evt.message, 'env');
+              audio.playEvent('weather_change');
+              break;
+            case 'lightning':
+              if (wr) {
+                wr.addFireLight(evt.x, evt.z);
+                wr.addFlash(evt.x * TILE_SIZE + TILE_SIZE / 2, evt.z * TILE_SIZE + TILE_SIZE / 2, 0xffcc44);
+              }
+              showNotification(evt.message, 'env');
+              audio.playEvent('fire');
+              break;
+            case 'fire_end':
+              if (wr) wr.removeFireLight(evt.x, evt.z);
+              break;
+            case 'campfire':
+              if (wr) wr.addFireLight(evt.x, evt.z);
+              showNotification(evt.message, 'env');
+              break;
+            case 'discovery': {
+              showNotification(evt.message, 'social');
+              historyLog.add('discovery', evt.message, time.day);
+              const agent = agents.find(a => a.id === evt.agentId);
+              if (agent && wr) {
+                wr.addFlash(agent.x * 2, agent.z * 2, 0xffd700);
+                showSpeechBubble(agent, evt.conceptName ?? evt.message);
+                showDiscoveryRing(agent);
+              }
+              audio.playEvent('discovery');
+              break;
+            }
+            case 'task_assigned':
+              showNotification(evt.message, 'social');
+              break;
+            case 'birth':
+              birthGameTimes.push(time.gameTime);
+              showNotification(evt.message, 'social');
+              historyLog.add('birth', evt.message, time.day);
+              audio.playEvent('birth');
+              break;
+            case 'disaster':
+              showNotification(evt.message, 'env');
+              historyLog.add('disaster', evt.message, time.day);
+              break;
+            case 'achievement':
+              showNotification(evt.message, 'social');
+              historyLog.add('achievement', evt.message, time.day);
+              // Persist the unlock (the worker's instance can't reach localStorage)
+              if (evt.achievementId) {
+                achievements.unlocked.add(evt.achievementId);
+                achievements._save();
+                renderAchievements();
+              }
+              break;
+            case 'conflict':
+              showNotification(evt.message, 'social');
+              historyLog.add('conflict', evt.message, time.day);
+              break;
+            case 'trade': {
+              const itemName = (id) => itemDefs.get(id)?.name ?? id;
+              const msg = `${evt.agentAName} traded ${itemName(evt.aGave)} for ${itemName(evt.bGave)} with ${evt.agentBName}`;
+              showNotification('🤝 ' + msg, 'social');
+              historyLog.add('trade', msg, time.day);
+              const trader = agents.find(a => a.id === evt.agentAId);
+              if (trader) showSpeechBubble(trader, '🤝');
+              break;
+            }
+            case 'war':
+              showNotification('⚔️ ' + evt.message, 'social');
+              historyLog.add('war', evt.message, time.day);
+              audio.playEvent('death');
+              break;
+            case 'death':
+              historyLog.addDeath({ name: evt.agentName }, evt.cause, time.day);
+              showNotification('💀 ' + HistoryLog.formatDeath({ name: evt.agentName }, evt.cause), 'social');
+              audio.playEvent('death');
+              break;
+            case 'disease_outbreak':
+              showNotification(evt.message, 'env');
+              historyLog.add('disease', evt.message, time.day);
+              break;
+            case 'disease_recovery':
+              // History only — recoveries are too frequent for notifications
+              historyLog.add('disease', evt.message, time.day);
+              break;
+          }
+        }
+      }
+    }
+
+    else if (msg.type === 'ERROR') {
+      showError('Worker error: ' + msg.message);
+    }
+  };
+
+  simWorker.onerror = (err) => {
+    showError('SimulationWorker crashed: ' + (err?.message ?? String(err)));
+  };
+
+  requestAnimationFrame(frame);
+  } catch (e) {
+    showError('Failed to initialize', e);
+    const loadingText = document.getElementById('loading-text');
+    if (loadingText) loadingText.textContent = 'Initialization failed. Check console.';
+    return;
+  }
+}
+
+init().catch(e => showError('Init failed', e));
+
+

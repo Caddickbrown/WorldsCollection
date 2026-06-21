@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pavilion</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Georgia', serif; }
+    canvas { display: block; }
+    #crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 12px; height: 12px; pointer-events: none; opacity: 0.6; }
+    #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff; }
+    #crosshair::before { width: 1px; height: 100%; left: 50%; }
+    #crosshair::after  { width: 100%; height: 1px; top: 50%; }
+    #hud { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.7); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; }
+    #interact-hint { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 0.08em; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+    #interact-hint.visible { opacity: 1; }
+    #info-card { position: fixed; bottom: 96px; left: 50%; transform: translateX(-50%); max-width: 440px; padding: 18px 28px; background: rgba(8,10,12,0.78); border: 1px solid rgba(255,255,255,0.18); text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.25s; }
+    #info-card.visible { opacity: 1; }
+    #info-card h2 { color: rgba(255,255,255,0.92); font-size: 14px; font-weight: 400; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 8px; }
+    #info-card p { color: rgba(255,255,255,0.65); font-size: 13px; line-height: 1.6; }
+    #room-label { position: fixed; top: 32px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.5); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; pointer-events: none; transition: opacity 0.5s; }
+    #time-label { position: fixed; top: 32px; right: 32px; color: rgba(255,255,255,0.4); font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; pointer-events: none; }
+    #vignette { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%); pointer-events: none; }
+    #overlay { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 24px; z-index: 100; transition: opacity 1s; }
+    #overlay h1 { color: #fff; font-size: 48px; font-weight: 300; letter-spacing: 0.3em; text-transform: uppercase; }
+    #overlay p { color: rgba(255,255,255,0.4); font-size: 13px; letter-spacing: 0.15em; }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+    #controls { display: grid; grid-template-columns: auto auto; gap: 7px 20px; font-size: 13px; letter-spacing: 0.12em; }
+    #controls span:nth-child(odd)  { text-align: right; color: rgba(255,255,255,0.85); text-transform: uppercase; }
+    #controls span:nth-child(even) { color: rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body>
+
+<div id="overlay">
+  <h1>Pavilion</h1>
+  <div id="controls">
+    <span>WASD</span><span>Move</span>
+    <span>Mouse</span><span>Look</span>
+    <span>Shift</span><span>Sprint</span>
+    <span>Space</span><span>Jump</span>
+    <span>E</span><span>Inspect</span>
+    <span>N</span><span>Time of day</span>
+    <span>P</span><span>Performance mode</span>
+    <span>Esc</span><span>Pause</span>
+  </div>
+  <p>Click to enter</p>
+</div>
+
+<div id="crosshair"></div>
+<div id="vignette"></div>
+<div id="room-label"></div>
+<div id="time-label">Noon</div>
+<div id="interact-hint">[ E ] Inspect</div>
+<div id="info-card"><h2></h2><p></p></div>
+<div id="hud">WASD · E Inspect · N Time · Space Jump</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "worlds://pavilion/vendor/three/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { EffectComposer } from 'worlds://pavilion/vendor/three/postprocessing/EffectComposer.js';
+  import { RenderPass }     from 'worlds://pavilion/vendor/three/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'worlds://pavilion/vendor/three/postprocessing/UnrealBloomPass.js';
+  import { Sky }            from 'worlds://pavilion/vendor/three/objects/Sky.js';
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.92;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0xc8d8e8, 0.004);
+
+  const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 800);
+  camera.position.set(0, 1.6, -8); // south of entry, facing front door
+
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.18, 0.4, 0.88);
+  composer.addPass(bloomPass);
+
+  const sky = new Sky();
+  sky.scale.setScalar(450000);
+  scene.add(sky);
+  const skyUni = sky.material.uniforms;
+  skyUni['mieCoefficient'].value  = 0.005;
+  skyUni['mieDirectionalG'].value = 0.8;
+  const sunVec = new THREE.Vector3();
+
+  const hemi = new THREE.HemisphereLight(0xfff4e0, 0x8ab4a0, 0.6);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff8e7, 2.5);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 500;
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -120;
+  sun.shadow.camera.right = sun.shadow.camera.top   =  120;
+  sun.shadow.bias = -0.001;
+  scene.add(sun);
+
+  const TIMES = [
+    { name: 'Morning', elev: 16, azim: 120, sunI: 1.7, sunC: new THREE.Color(0xffdcb0), hemiI: 0.5,  fogC: new THREE.Color(0xdbe4ee), fogD: 0.0055, exp: 0.85, bloom: 0.22, lights: 0.8, turb: 7, rayl: 2.6 },
+    { name: 'Noon',    elev: 35, azim: 200, sunI: 2.5, sunC: new THREE.Color(0xfff8e7), hemiI: 0.6,  fogC: new THREE.Color(0xc8d8e8), fogD: 0.004,  exp: 0.9,  bloom: 0.18, lights: 0.3, turb: 5, rayl: 1.8 },
+    { name: 'Dusk',    elev: 5,  azim: 285, sunI: 1.1, sunC: new THREE.Color(0xff9248), hemiI: 0.3,  fogC: new THREE.Color(0xe0b090), fogD: 0.006,  exp: 0.82, bloom: 0.32, lights: 2.2, turb: 8, rayl: 3.5 },
+    { name: 'Night',   elev: -10, azim: 320, sunI: 0.0, sunC: new THREE.Color(0x90a8d0), hemiI: 0.07, fogC: new THREE.Color(0x101822), fogD: 0.0065, exp: 0.75, bloom: 0.5,  lights: 2.6, turb: 4, rayl: 0.6 },
+  ];
+  let timeIndex = 1;
+  const atmo = { ...TIMES[1], sunC: TIMES[1].sunC.clone(), fogC: TIMES[1].fogC.clone() };
+  const interiorLights = [];
+  const timeLabelEl = document.getElementById('time-label');
+
+  function applyAtmosphere() {
+    sunVec.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - atmo.elev), THREE.MathUtils.degToRad(atmo.azim));
+    skyUni['sunPosition'].value.copy(sunVec);
+    skyUni['turbidity'].value = atmo.turb;
+    skyUni['rayleigh'].value  = atmo.rayl;
+    sun.position.copy(sunVec).multiplyScalar(100);
+    sun.intensity = atmo.sunI; sun.color.copy(atmo.sunC);
+    hemi.intensity = atmo.hemiI;
+    scene.fog.color.copy(atmo.fogC);
+    scene.fog.density = atmo.fogD;
+    renderer.toneMappingExposure = atmo.exp;
+    bloomPass.strength = atmo.bloom;
+    for (const pl of interiorLights) pl.intensity = pl.userData.baseIntensity * atmo.lights;
+  }
+  applyAtmosphere();
+
+  function tickAtmosphere(delta) {
+    const tgt = TIMES[timeIndex];
+    const k = 1 - Math.exp(-2.2 * delta);
+    const lerp = THREE.MathUtils.lerp;
+    atmo.elev  = lerp(atmo.elev, tgt.elev, k); atmo.azim  = lerp(atmo.azim, tgt.azim, k);
+    atmo.sunI  = lerp(atmo.sunI, tgt.sunI, k); atmo.hemiI = lerp(atmo.hemiI, tgt.hemiI, k);
+    atmo.fogD  = lerp(atmo.fogD, tgt.fogD, k); atmo.exp   = lerp(atmo.exp, tgt.exp, k);
+    atmo.bloom = lerp(atmo.bloom, tgt.bloom, k); atmo.lights = lerp(atmo.lights, tgt.lights, k);
+    atmo.turb  = lerp(atmo.turb, tgt.turb, k); atmo.rayl  = lerp(atmo.rayl, tgt.rayl, k);
+    atmo.sunC.lerp(tgt.sunC, k); atmo.fogC.lerp(tgt.fogC, k);
+    applyAtmosphere();
+  }
+
+  let shadowsEnabled = true;
+  function setTimeOfDay(i) {
+    timeIndex = i;
+    sun.castShadow = TIMES[i].elev > 0 && shadowsEnabled;
+    if (timeLabelEl) timeLabelEl.textContent = TIMES[i].name;
+  }
+
+  let getRoomLabel = null, interactables = [], tickScene = null;
+  import('./scene.js').then(({ buildBungalow, getRoomLabel: grl, INTERACTABLES, tickScene: tick }) => {
+    buildBungalow(scene);
+    getRoomLabel = grl;
+    interactables = INTERACTABLES;
+    tickScene = tick;
+    scene.traverse(obj => {
+      if (obj.isPointLight) { obj.userData.baseIntensity = obj.intensity; interiorLights.push(obj); return; }
+      if (!obj.isMesh || obj === sky) return;
+      const mat = obj.material;
+      const translucent = mat && mat.transparent && (mat.opacity ?? 1) < 0.7;
+      obj.castShadow = !translucent && !obj.userData.noShadow;
+      obj.receiveShadow = true;
+    });
+    buildCollisionLists();
+  });
+
+  let floorMeshes = [], wallMeshes = [];
+  const EYE_HEIGHT = 1.65, STEP_UP = 0.55, PLAYER_R = 0.32, GRAVITY = 16.0, JUMP_SPEED = 5.2, SNAP_DIST = 3.5;
+  let playerY = -0.18, fallSpeed = 0, grounded = true, bobPhase = 0, bobAmp = 0;
+  const _floorRay = new THREE.Raycaster(); const _wallRay = new THREE.Raycaster();
+  _floorRay.far = SNAP_DIST;
+
+  function buildCollisionLists() {
+    scene.traverse(obj => {
+      if (!obj.isMesh || obj === sky) return;
+      const tag = obj.userData.collide;
+      if (tag === 'wall')  { wallMeshes.push(obj);  return; }
+      if (tag === 'floor') { floorMeshes.push(obj); return; }
+      if (tag === 'none') return;
+      if (obj.isInstancedMesh) return;
+      const mat = obj.material;
+      if (mat && mat.transparent && (mat.opacity || 1) < 0.7) return;
+      const bb = new THREE.Box3().setFromObject(obj);
+      const size = new THREE.Vector3(); bb.getSize(size);
+      if (size.y < 0.6 && Math.max(size.x, size.z) > 0.5) floorMeshes.push(obj);
+      if (size.y > 0.7 && Math.min(size.x, size.z) > 0.05 && Math.max(size.x, size.z) > 0.3) wallMeshes.push(obj);
+    });
+  }
+
+  const _DOWN = new THREE.Vector3(0, -1, 0); const _rayOrigin = new THREE.Vector3();
+  function sampleFloor(x, z, fromY) {
+    _floorRay.set(_rayOrigin.set(x, fromY + 0.3, z), _DOWN);
+    const hits = _floorRay.intersectObjects(floorMeshes, false);
+    for (const h of hits) { if (h.distance > 0.05) return h.point.y; }
+    return null;
+  }
+  function resolveMovement(cx, cz, footY, dx, dz) {
+    if (!isBlocked(cx + dx, cz + dz, footY)) return { x: cx + dx, z: cz + dz };
+    if (!isBlocked(cx + dx, cz,      footY)) return { x: cx + dx, z: cz };
+    if (!isBlocked(cx,      cz + dz, footY)) return { x: cx,      z: cz + dz };
+    return { x: cx, z: cz };
+  }
+  const _CARDINALS = [new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)];
+  function isBlocked(tx, tz, footY) {
+    for (const dy of [0.4, 1.1]) {
+      for (const dir of _CARDINALS) {
+        _wallRay.set(_rayOrigin.set(tx, footY + dy, tz), dir);
+        _wallRay.far = PLAYER_R;
+        const hits = _wallRay.intersectObjects(wallMeshes, false);
+        if (hits.length > 0 && hits[0].distance < PLAYER_R) return true;
+      }
+    }
+    return false;
+  }
+
+  const overlay = document.getElementById('overlay');
+  const keys = {}; let locked = false; let yaw = Math.PI, pitch = 0;
+  const SPEED = 5.0, SPRINT = 11.0;
+  document.addEventListener('keydown', e => keys[e.code] = true);
+  document.addEventListener('keyup',   e => keys[e.code] = false);
+  function clearKeys() { for (const k in keys) keys[k] = false; }
+  window.addEventListener('blur', clearKeys);
+  overlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
+  document.addEventListener('pointerlockchange', () => {
+    locked = document.pointerLockElement === renderer.domElement;
+    overlay.classList.toggle('hidden', locked);
+    if (!locked) clearKeys();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!locked) return;
+    yaw   -= e.movementX * 0.0018;
+    pitch -= e.movementY * 0.0018;
+    pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+  });
+
+  const interactHintEl = document.getElementById('interact-hint');
+  const infoCardEl = document.getElementById('info-card');
+  const infoTitleEl = infoCardEl.querySelector('h2');
+  const infoTextEl  = infoCardEl.querySelector('p');
+  const _lookRay = new THREE.Raycaster(); _lookRay.far = 3;
+  const _screenCentre = new THREE.Vector2(0, 0);
+  let lookTarget = null, infoOpen = false;
+  function hideInfo() { infoOpen = false; infoCardEl.classList.remove('visible'); }
+  function updateLookTarget() {
+    _lookRay.setFromCamera(_screenCentre, camera);
+    const hits = _lookRay.intersectObjects(interactables, false);
+    const obj = hits.length ? hits[0].object : null;
+    if (obj === lookTarget) return;
+    lookTarget = obj; hideInfo();
+    if (obj) { interactHintEl.textContent = `[ E ] ${obj.userData.inspect.name}`; interactHintEl.classList.add('visible'); }
+    else { interactHintEl.classList.remove('visible'); }
+  }
+  document.addEventListener('keydown', e => {
+    if (!locked) return;
+    if (e.code === 'KeyN') { setTimeOfDay((timeIndex + 1) % TIMES.length); }
+    else if (e.code === 'KeyP') {
+      shadowsEnabled = !shadowsEnabled;
+      sun.castShadow = shadowsEnabled && TIMES[timeIndex].elev > 0;
+      const pr = shadowsEnabled ? Math.min(window.devicePixelRatio, 2) : 1;
+      renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    } else if (e.code === 'KeyE') {
+      if (infoOpen) { hideInfo(); return; }
+      if (lookTarget) {
+        const { name, text, action } = lookTarget.userData.inspect;
+        if (action) { action(); return; }
+        infoTitleEl.textContent = name; infoTextEl.textContent = text;
+        infoCardEl.classList.add('visible'); infoOpen = true;
+      }
+    }
+  });
+
+  const clock = new THREE.Clock();
+  const roomLabelEl = document.getElementById('room-label');
+  const _move = new THREE.Vector3(); const _moveEuler = new THREE.Euler(0,0,0,'YXZ');
+  let elapsed = 0;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const delta = Math.min(clock.getDelta(), 0.1);
+    elapsed += delta;
+    tickAtmosphere(delta);
+    if (tickScene) tickScene(elapsed, delta);
+    if (locked) {
+      const speed = keys['ShiftLeft'] || keys['ShiftRight'] ? SPRINT : SPEED;
+      const move = _move.set(0, 0, 0);
+      if (keys['KeyW'] || keys['ArrowUp'])    move.z -= 1;
+      if (keys['KeyS'] || keys['ArrowDown'])  move.z += 1;
+      if (keys['KeyA'] || keys['ArrowLeft'])  move.x -= 1;
+      if (keys['KeyD'] || keys['ArrowRight']) move.x += 1;
+      move.normalize().multiplyScalar(speed * delta);
+      _moveEuler.set(0, yaw, 0); move.applyEuler(_moveEuler);
+      const cx = camera.position.x, cz = camera.position.z;
+      let resolved;
+      if (wallMeshes.length > 0 && (move.x !== 0 || move.z !== 0)) {
+        resolved = resolveMovement(cx, cz, playerY, move.x, move.z);
+      } else {
+        resolved = { x: cx + move.x, z: cz + move.z };
+      }
+      if (floorMeshes.length > 0) {
+        if (grounded && keys['Space']) { fallSpeed = -JUMP_SPEED; grounded = false; }
+        if (grounded) {
+          const floorY = sampleFloor(resolved.x, resolved.z, playerY + STEP_UP);
+          if (floorY !== null) {
+            if (floorY > playerY + STEP_UP) { resolved = { x: cx, z: cz }; }
+            else { playerY += (floorY - playerY) * Math.min(1, 14 * delta); fallSpeed = 0; }
+          } else { grounded = false; }
+        }
+        if (!grounded) {
+          fallSpeed += GRAVITY * delta; playerY -= fallSpeed * delta;
+          if (fallSpeed > 0) {
+            const floorY = sampleFloor(resolved.x, resolved.z, playerY + 0.7);
+            if (floorY !== null && playerY <= floorY) { playerY = floorY; fallSpeed = 0; grounded = true; }
+          }
+          playerY = Math.max(-5, playerY);
+        }
+      }
+      camera.position.x = resolved.x; camera.position.z = resolved.z;
+      const horizDist = Math.hypot(resolved.x - cx, resolved.z - cz);
+      if (grounded && horizDist > 0.0001) { bobPhase += horizDist * 1.7; bobAmp = Math.min(1, bobAmp + delta * 6); }
+      else { bobAmp = Math.max(0, bobAmp - delta * 6); }
+      camera.position.y = playerY + EYE_HEIGHT + Math.sin(bobPhase) * 0.035 * bobAmp;
+    }
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+    if (getRoomLabel) roomLabelEl.textContent = getRoomLabel(camera.position.x, camera.position.z);
+    if (locked && interactables.length) updateLookTarget();
+    composer.render();
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+1|<!DOCTYPE html>
+2|<html lang="en">
+3|<head>
+4|  <meta charset="UTF-8">
+5|  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+6|  <title>World</title>
+7|  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
+8|  <link rel="manifest" href="manifest.json">
+9|  <meta name="theme-color" content="#2d6a2d">
+10|  <link rel="stylesheet" href="style.css">
+11|  <script type="importmap">
+12|    {
+13|      "imports": {
+14|        "three": "worlds://world/vendor/three/three.module.js",
+15|        "three/addons/": "worlds://world/vendor/three/"
+16|      }
+17|    }
+18|  </script>
+19|</head>
+20|<body>
+21|
+22|  <canvas id="world-canvas"></canvas>
+23|
+24|  <!-- CAD-161: Resource overlay canvas -->
+25|  <canvas id="resource-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:5;"></canvas>
+26|
+27|  <!-- CAD-162: Heatmap overlay canvas -->
+28|  <canvas id="heatmap-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:6;"></canvas>
+29|
+30|  <div id="hud">
+31|
+32|    <div id="hud-top">
+33|      <div id="world-info">
+34|        <span id="world-day">Day 1</span>
+35|        <span id="world-season">Spring</span>
+36|        <span id="world-time">☀️ Noon</span>
+37|        <span id="world-weather">☀️ Clear</span>
+38|        <span id="world-temp">☀️ 13°C</span>
+39|        <!-- CAD-122: Tide indicator -->
+40|        <span id="world-tide" style="opacity:0.8;">🌊 Tide: —</span>
+41|      </div>
+42|      <div id="pop-info">
+43|        <span>Population: <span id="population">0</span></span>
+44|        <span>Replenishment: <span id="replenishment">—</span></span>
+45|      </div>
+46|      <div id="seed-controls" style="display:flex;align-items:center;gap:6px;">
+47|        <span id="world-seed" style="opacity:0.6;font-size:0.85em;">Seed: –</span>
+48|        <input id="seed-input" type="number" placeholder="Enter seed…" style="width:90px">
+49|        <button id="seed-btn">New World</button>
+50|      </div>
+51|      <button id="hamburger-btn" title="Settings">☰</button>
+52|    </div>
+53|
+54|    <div id="settings-panel" class="hidden">
+55|      <div class="settings-title">Settings</div>
+56|      <div class="settings-divider"></div>
+57|
+58|      <div id="stats-section" class="stats-section">
+59|        <div class="settings-title">Stats</div>
+60|        <div class="stat-row"><span class="stat-label">Game overs</span><span id="stat-game-overs">0</span></div>
+61|        <div class="stat-row"><span class="stat-label">Resets</span><span id="stat-worlds">0</span></div>
+62|        <div class="stat-row"><span class="stat-label">Total births</span><span id="stat-births">0</span></div>
+63|        <div class="stat-row"><span class="stat-label">Longest survival</span><span id="stat-days">—</span></div>
+64|        <div class="stat-row"><span class="stat-label">Peak population</span><span id="stat-peak">0</span></div>
+65|        <div class="stat-row"><span class="stat-label">Most discoveries</span><span id="stat-discoveries">0</span></div>
+66|      </div>
+67|      <div class="settings-divider"></div>
+68|
+69|      <div id="achievements-section" class="stats-section">
+70|        <div class="settings-title">Achievements</div>
+71|        <div id="achievements-list"></div>
+72|      </div>
+73|      <div class="settings-divider"></div>
+74|
+75|      <div class="setting-row">
+76|        <label class="setting-label" for="pop-slider">Starting population</label>
+77|        <span class="setting-value" id="pop-value">12</span>
+78|      </div>
+79|      <input type="range" id="pop-slider" min="5" max="100" step="1" value="12">
+80|
+81|      <div class="setting-row" style="margin-top:12px">
+82|        <label class="setting-label" for="max-pop-slider">Max population</label>
+83|        <span class="setting-value" id="max-pop-value">100</span>
+84|      </div>
+85|      <input type="range" id="max-pop-slider" min="40" max="300" step="5" value="100">
+86|
+87|      <div class="settings-divider" style="margin-top:14px"></div>
+88|      <button id="reset-btn">↺ Reset World</button>
+89|      <p class="reset-warning">Generates a new world with a new seed.<br>All progress will be lost.</p>
+90|    </div>
+91|
+92|    <div id="stats-panel">
+93|      <div class="stats-row"><span class="stats-row-label">Population</span><span class="stats-row-value" id="sp-population">—</span></div>
+94|      <div class="stats-row"><span class="stats-row-label">Era</span><span class="stats-row-value" id="sp-era">—</span></div>
+95|      <div class="stats-row"><span class="stats-row-label">Day</span><span class="stats-row-value" id="sp-day">—</span></div>
+96|      <div class="stats-row"><span class="stats-row-label">Time</span><span class="stats-row-value" id="sp-time">—</span></div>
+97|      <div class="stats-row"><span class="stats-row-label">Weather</span><span class="stats-row-value" id="sp-weather">—</span></div>
+98|      <div class="stats-row"><span class="stats-row-label">Settlements</span><span class="stats-row-value" id="sp-settlements">—</span></div>
+99|      <!-- Overlay toggle buttons -->
+100|      <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+101|        <button id="pop-graph-btn" title="Population Graph" style="font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;cursor:pointer;color:inherit;">📊</button>
+102|        <button id="knowledge-overlay-btn" title="Knowledge Map" style="font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;cursor:pointer;color:inherit;">🧠</button>
+103|        <button id="resource-overlay-btn" title="Resource Map" style="font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;cursor:pointer;color:inherit;">🌾</button>
+104|        <button id="heatmap-overlay-btn" title="Population Heatmap" style="font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;cursor:pointer;color:inherit;">🔥</button>
+105|        <button id="timeline-btn" title="Timeline" style="font-size:14px;padding:3px 7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:4px;cursor:pointer;color:inherit;">📜</button>
+106|      </div>
+107|    </div>
+108|
+109|    <!-- CAD-158: Population graph panel -->
+110|    <div id="pop-graph-panel" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(10,20,10,0.88);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 14px;z-index:20;min-width:300px;">
+111|      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+112|        <span style="font-size:12px;opacity:0.7;font-weight:600;">Population Over Time</span>
+113|        <button id="pop-graph-close" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;opacity:0.6;">×</button>
+114|      </div>
+115|      <canvas id="pop-graph" width="300" height="120" style="display:block;"></canvas>
+116|    </div>
+117|
+118|    <!-- CAD-160: Knowledge overlay panel -->
+119|    <div id="knowledge-overlay-panel" style="display:none;position:fixed;top:80px;right:10px;background:rgba(10,20,10,0.88);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 14px;z-index:20;max-width:240px;max-height:60vh;overflow-y:auto;">
+120|      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+121|        <span style="font-size:12px;opacity:0.7;font-weight:600;">🧠 Settlement Knowledge</span>
+122|        <button id="knowledge-overlay-close" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;opacity:0.6;">×</button>
+123|      </div>
+124|      <div id="knowledge-overlay-content" style="font-size:11px;"></div>
+125|    </div>
+126|
+127|    <!-- Timeline / history panel -->
+128|    <div id="timeline-panel" style="display:none;position:fixed;top:80px;right:10px;background:rgba(10,20,10,0.88);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 14px;z-index:20;width:280px;max-height:60vh;overflow-y:auto;">
+129|      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+130|        <span style="font-size:12px;opacity:0.7;font-weight:600;">📜 Timeline</span>
+131|        <button id="timeline-close" style="background:none;border:none;color:inherit;cursor:pointer;font-size:14px;opacity:0.6;">×</button>
+132|      </div>
+133|      <div id="timeline-content" style="font-size:11px;"></div>
+134|    </div>
+135|
+136|    <div id="notifications">
+137|      <div id="notifications-env" class="notification-group" data-type="env">
+138|        <div class="notification-group-label">Environment</div>
+139|      </div>
+140|      <div id="notifications-social" class="notification-group" data-type="social">
+141|        <div class="notification-group-label">Social</div>
+142|      </div>
+143|    </div>
+144|
+145|    <div id="hud-bottom">
+146|      <div id="concepts-panel">
+147|        <div class="panel-title">Discoveries</div>
+148|        <div id="concepts-list"><em>None yet...</em></div>
+149|      </div>
+150|      <div id="speed-controls">
+151|        <button class="speed-btn" data-speed="0">⏸</button>
+152|        <button class="speed-btn active" data-speed="1">1×</button>
+153|        <button class="speed-btn" data-speed="5">5×</button>
+154|        <button class="speed-btn" data-speed="20">20×</button>
+155|      </div>
+156|    </div>
+157|
+158|    <div id="discoveries-modal" class="hidden">
+159|      <div id="discoveries-modal-card">
+160|        <div class="panel-title">
+161|          <span>All Discoveries</span>
+162|          <button id="discoveries-modal-close">×</button>
+163|        </div>
+164|        <div id="discoveries-modal-list"></div>
+165|      </div>
+166|    </div>
+167|
+168|    <div id="info-panel" class="hidden">
+169|      <button id="info-close">×</button>
+170|      <div id="info-content"></div>
+171|    </div>
+172|
+173|  </div>
+174|
+175|  <div id="loading">
+176|    <div id="loading-text">Generating world...</div>
+177|  </div>
+178|
+179|  <div id="error-banner" class="hidden">
+180|    <span id="error-message"></span>
+181|    <button id="error-dismiss">×</button>
+182|  </div>
+183|
+184|  <div id="game-over" class="hidden">
+185|    <div id="game-over-card">
+186|      <div id="game-over-title">Civilization Lost</div>
+187|      <div id="game-over-subtitle">Your people are gone</div>
+188|      <div id="game-over-stats"></div>
+189|      <button id="game-over-reset">↺ Begin Again</button>
+190|    </div>
+191|  </div>
+192|
+193|  <script type="module" src="src/main.js"></script>
+194|  <script>
+195|    if ('serviceWorker' in navigator) {
+196|      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+197|    }
+198|  </script>
+199|</body>
+200|</html>
+201|
+202|

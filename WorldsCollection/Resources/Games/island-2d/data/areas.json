@@ -1,0 +1,326 @@
+[
+  {
+    "id": "townSquare",
+    "label": "Town Square",
+    "x": 0,
+    "z": 0,
+    "radius": 30,
+    "kind": "civic",
+    "blurb": "The beating heart of the island. Festivals, market days, the sound of the fountain at dusk."
+  },
+  {
+    "id": "bakery",
+    "label": "The Bakery",
+    "x": -60,
+    "z": -40,
+    "radius": 15,
+    "kind": "craft",
+    "blurb": "Rosa's ovens fire before dawn. The air smells of cardamom buns and fresh rye."
+  },
+  {
+    "id": "postOffice",
+    "label": "Post Office",
+    "x": 60,
+    "z": -40,
+    "radius": 15,
+    "kind": "civic",
+    "blurb": "Letters, parcels, rumour. Theo knows every doorway by heart."
+  },
+  {
+    "id": "cafe",
+    "label": "The Caf\u00e9",
+    "x": 5,
+    "z": -55,
+    "radius": 12,
+    "kind": "craft",
+    "blurb": "Nico pours the island's coffee. The terrace catches the afternoon sun."
+  },
+  {
+    "id": "pub",
+    "label": "The Anchor",
+    "x": -30,
+    "z": -70,
+    "radius": 15,
+    "kind": "civic",
+    "blurb": "Barney's pub. A fire in the hearth, a pint on the house if you arrive wet."
+  },
+  {
+    "id": "school",
+    "label": "The Schoolhouse",
+    "x": 40,
+    "z": -70,
+    "radius": 15,
+    "kind": "civic",
+    "blurb": "Clara teaches numbers; Rex teaches the river. The bell rings at nine."
+  },
+  {
+    "id": "library",
+    "label": "The Library",
+    "x": 80,
+    "z": 40,
+    "radius": 20,
+    "kind": "civic",
+    "blurb": "Marta's kingdom of indexed stories. Armchairs deep enough to vanish into."
+  },
+  {
+    "id": "workshop",
+    "label": "The Workshop",
+    "x": -70,
+    "z": 52,
+    "radius": 20,
+    "kind": "craft",
+    "blurb": "Otto's garage. Solder, sawdust, the half-rebuilt truck that may yet run."
+  },
+  {
+    "id": "farm",
+    "label": "The Farm",
+    "x": -180,
+    "z": 80,
+    "radius": 40,
+    "kind": "rural",
+    "blurb": "Eddy and Pete work the terraces. Hens, bees, a windmill that never quite sleeps."
+  },
+  {
+    "id": "forestPath",
+    "label": "Forest Path",
+    "x": 180,
+    "z": 120,
+    "radius": 35,
+    "kind": "wild",
+    "blurb": "Old growth. Moss, woodpeckers, a trail that seems longer than the map admits. Jin sketches in the margins."
+  },
+  {
+    "id": "clifftops",
+    "label": "The Clifftops",
+    "x": -100,
+    "z": -180,
+    "radius": 30,
+    "kind": "wild",
+    "blurb": "The island's highest point. Wind. The whole town laid out like a pressed leaf."
+  },
+  {
+    "id": "southBeach",
+    "label": "South Beach",
+    "x": 0,
+    "z": -220,
+    "radius": 30,
+    "kind": "shore",
+    "blurb": "Pale sand, flat water at low tide. Someone's always left a bucket here."
+  },
+  {
+    "id": "beach",
+    "label": "East Headland",
+    "x": 30,
+    "z": -200,
+    "radius": 20,
+    "kind": "shore",
+    "blurb": "Rockier, tidal pools, the fishing nets mended in long slow afternoons."
+  },
+  {
+    "id": "eastBeach",
+    "label": "East Beach",
+    "x": 150,
+    "z": -155,
+    "radius": 25,
+    "kind": "shore",
+    "blurb": "A secluded stretch around the headland. Tidal pools, no footprints most days."
+  },
+  {
+    "id": "dock",
+    "label": "The Dock",
+    "x": 0,
+    "z": 262,
+    "radius": 25,
+    "kind": "shore",
+    "blurb": "Salt-grey planks, Suki's boat, the only way on or off the island."
+  },
+  {
+    "id": "lighthouse",
+    "label": "The Lighthouse",
+    "x": 42,
+    "z": 248,
+    "radius": 15,
+    "kind": "shore",
+    "blurb": "Lena's domain. The light sweeps through fog and counts out the hours."
+  },
+  {
+    "id": "treehouse",
+    "label": "Petra's Treehouse",
+    "x": 188,
+    "z": 128,
+    "radius": 12,
+    "kind": "wild",
+    "blurb": "High in the canopy, Petra's studio-retreat. She built most of it herself."
+  },
+  {
+    "id": "aquarium",
+    "label": "Elliot's Aquarium",
+    "x": 150,
+    "z": -80,
+    "radius": 20,
+    "kind": "civic",
+    "blurb": "Fifteen fish in quiet blue light. Elliot hums while he feeds them."
+  },
+  {
+    "id": "rosaHome",
+    "label": "Rosa's Home",
+    "x": -72,
+    "z": -58,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "A small cottage near the bakery."
+  },
+  {
+    "id": "theoHome",
+    "label": "Theo's Home",
+    "x": 72,
+    "z": -58,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Theo's place, close to the Post Office."
+  },
+  {
+    "id": "eddyHome",
+    "label": "Eddy's Home",
+    "x": -195,
+    "z": 90,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "On the farm, where he belongs."
+  },
+  {
+    "id": "oliveHome",
+    "label": "Olive's Home",
+    "x": -12,
+    "z": 12,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Central village, above the shop."
+  },
+  {
+    "id": "martaHome",
+    "label": "Marta's Home",
+    "x": 90,
+    "z": 58,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "A short walk from the library."
+  },
+  {
+    "id": "sukiHome",
+    "label": "Suki's Home",
+    "x": 30,
+    "z": 200,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Near the harbour, as a fisherman should be."
+  },
+  {
+    "id": "peteHome",
+    "label": "Pete's Home",
+    "x": -195,
+    "z": 65,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Farm hand's cottage."
+  },
+  {
+    "id": "barneyHome",
+    "label": "Barney's Home",
+    "x": -42,
+    "z": -78,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Just behind The Anchor."
+  },
+  {
+    "id": "nicoHome",
+    "label": "Nico's Home",
+    "x": -5,
+    "z": -63,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Around the corner from the caf\u00e9."
+  },
+  {
+    "id": "claraHome",
+    "label": "Clara's Home",
+    "x": 52,
+    "z": -82,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Near the school."
+  },
+  {
+    "id": "rexHome",
+    "label": "Rex's Home",
+    "x": 56,
+    "z": -60,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "A quiet spot near the Post Office."
+  },
+  {
+    "id": "ottoHome",
+    "label": "Otto's Home",
+    "x": -94,
+    "z": 28,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Close to the workshop."
+  },
+  {
+    "id": "oldWillHome",
+    "label": "Old Will's Home",
+    "x": 10,
+    "z": 240,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Near the harbour."
+  },
+  {
+    "id": "lenaHome",
+    "label": "Lena's Home",
+    "x": 45,
+    "z": 242,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "The lighthouse cottage."
+  },
+  {
+    "id": "beaHome",
+    "label": "Bea's Home",
+    "x": 20,
+    "z": -20,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Central village."
+  },
+  {
+    "id": "petraHome",
+    "label": "Petra's Home",
+    "x": 188,
+    "z": 128,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "The treehouse in the forest."
+  },
+  {
+    "id": "jinHome",
+    "label": "Jin's Home",
+    "x": 175,
+    "z": 105,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "Near the interior garden."
+  },
+  {
+    "id": "newcomerRoom",
+    "label": "Newcomer's Room",
+    "x": -5,
+    "z": -30,
+    "radius": 5,
+    "kind": "residential",
+    "blurb": "A rented room above the shop."
+  }
+]
