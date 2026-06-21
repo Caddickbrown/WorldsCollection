@@ -14,7 +14,7 @@ struct GameView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: GameViewController, context: Context) {}
 }
 
-// MARK: – GameViewController
+// MARK: - GameViewController
 
 final class GameViewController: UIViewController {
     let game: GameDefinition
@@ -32,12 +32,12 @@ final class GameViewController: UIViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: – Orientation (landscape only)
+    // MARK: - Orientation (landscape only)
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
 
-    // MARK: – Lifecycle
+    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -49,7 +49,7 @@ final class GameViewController: UIViewController {
         controllerBridge = ControllerBridge(webView: webView)
     }
 
-    // MARK: – WebView setup
+    // MARK: - WebView setup
 
     private func buildWebView() {
         let config = WKWebViewConfiguration()
@@ -61,10 +61,10 @@ final class GameViewController: UIViewController {
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
 
-        // Enable JS (on by default, but be explicit)
-        config.preferences.javaScriptEnabled = true
+        // Enable JavaScript
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
 
-        // Allow cross-origin isolation headers (needed for SharedArrayBuffer / Workers)
+        // Disable text interaction for better game experience
         if #available(iOS 15.4, *) {
             config.preferences.isTextInteractionEnabled = false
         }
@@ -124,7 +124,7 @@ final class GameViewController: UIViewController {
         webView.load(request)
     }
 
-    // MARK: – Actions
+    // MARK: - Actions
 
     @objc private func dismissGame() {
         onDismiss()
@@ -141,7 +141,7 @@ final class GameViewController: UIViewController {
     }
 }
 
-// MARK: – WKNavigationDelegate
+// MARK: - WKNavigationDelegate
 
 extension GameViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
