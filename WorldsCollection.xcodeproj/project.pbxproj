@@ -162,7 +162,6 @@
 			files = (
 				9CB4A16C73E54FFEB88950B3 /* Games in Resources */,
 				AA200002 /* Assets.xcassets in Resources */,
-				21069CCEDA8F49E29C2E27B7 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
