@@ -1,0 +1,394 @@
+[
+  {
+    "id": "bakery",
+    "label": "Bakery",
+    "x": -60,
+    "z": -40,
+    "rotY": 0.3,
+    "w": 12,
+    "h": 8,
+    "d": 9,
+    "wallColor": "0xe17055",
+    "roofColor": "0x9b2226",
+    "options": {
+      "enterable": true,
+      "solarPanels": true,
+      "signText": "\ud83c\udf5e Bakery",
+      "signBg": "0xfde8c9",
+      "signColor": "0x6b2f00"
+    }
+  },
+  {
+    "id": "post-office",
+    "label": "Post Office",
+    "x": 60,
+    "z": -40,
+    "rotY": -0.2,
+    "w": 10,
+    "h": 7,
+    "d": 8,
+    "wallColor": "0xcc2222",
+    "roofColor": "0x9b2226",
+    "options": {
+      "enterable": true,
+      "solarPanels": true,
+      "signText": "\ud83d\udcee Post Office",
+      "signBg": "0xffffff",
+      "signColor": "0xcc2222"
+    }
+  },
+  {
+    "id": "library",
+    "label": "Library",
+    "x": 80,
+    "z": 40,
+    "rotY": 1.1,
+    "w": 28,
+    "h": 10,
+    "d": 24,
+    "factory": "makeLibraryBuilding",
+    "options": {
+      "enterable": true
+    }
+  },
+  {
+    "id": "workshop",
+    "label": "Garage",
+    "x": -80,
+    "z": 40,
+    "rotY": 0.3,
+    "w": 18,
+    "h": 7,
+    "d": 16,
+    "factory": "makeOpenGarage",
+    "options": {}
+  },
+  {
+    "id": "keepers-cottage",
+    "label": "Keeper's Cottage",
+    "x": 36,
+    "z": 244,
+    "rotY": 0.6,
+    "w": 8,
+    "h": 4,
+    "d": 6,
+    "wallColor": "0xf5f2ec",
+    "roofColor": "0xcc2222",
+    "options": {}
+  },
+  {
+    "id": "barn",
+    "label": "Barn",
+    "x": -180,
+    "z": 70,
+    "rotY": 0.2,
+    "w": 14,
+    "h": 8,
+    "d": 10,
+    "factory": "makeBarn",
+    "options": {}
+  },
+  {
+    "id": "greenhouse",
+    "label": "Greenhouse",
+    "x": -160,
+    "z": 90,
+    "rotY": 0.2,
+    "w": 10,
+    "h": 5,
+    "d": 14,
+    "wallColor": "0x55efc4",
+    "roofColor": "0x2ecc71",
+    "options": {
+      "solarPanels": false
+    }
+  },
+  {
+    "id": "petras-treehouse",
+    "label": "Petra's Treehouse",
+    "x": 188,
+    "z": 128.5,
+    "rotY": 0.4,
+    "w": 4.5,
+    "h": 3.5,
+    "d": 4,
+    "wallColor": "0xb8936a",
+    "roofColor": "0x7a5030",
+    "options": {}
+  },
+  {
+    "id": "radio-station",
+    "label": "Radio Station",
+    "x": 110,
+    "z": 50,
+    "rotY": -0.4,
+    "w": 7,
+    "h": 4,
+    "d": 6,
+    "wallColor": "0xd4cfc8",
+    "roofColor": "0x8a8278",
+    "options": {}
+  },
+  {
+    "id": "beach-hut",
+    "label": "Beach Hut",
+    "x": -38,
+    "z": -214,
+    "rotY": 0.8,
+    "w": 3,
+    "h": 3.2,
+    "d": 2.5,
+    "wallColor": "0x4a90d9",
+    "roofColor": "0xfdcb6e",
+    "options": {}
+  },
+  {
+    "id": "pub",
+    "label": "The Anchor",
+    "x": -30,
+    "z": -70,
+    "rotY": 0.1,
+    "w": 13,
+    "h": 7,
+    "d": 10,
+    "wallColor": "0xc8a56e",
+    "roofColor": "0x5c3d1e",
+    "options": {
+      "enterable": true,
+      "solarPanels": false,
+      "signText": "\u2693 The Anchor",
+      "signBg": "0x1a1a2e",
+      "signColor": "0xffd700"
+    }
+  },
+  {
+    "id": "school",
+    "label": "School",
+    "x": 40,
+    "z": -70,
+    "rotY": -0.15,
+    "w": 18,
+    "h": 7,
+    "d": 12,
+    "wallColor": "0xf9ca24",
+    "roofColor": "0x6ab04c",
+    "options": {
+      "enterable": true,
+      "solarPanels": true,
+      "signText": "\ud83c\udfe3 School",
+      "signBg": "0xffffff",
+      "signColor": "0x333333"
+    }
+  },
+  {
+    "id": "cafe",
+    "label": "The Caf\u00e9",
+    "x": 5,
+    "z": -55,
+    "rotY": 0.15,
+    "w": 10,
+    "h": 6,
+    "d": 8,
+    "wallColor": "0xf0e6d3",
+    "roofColor": "0x5c3d1e",
+    "options": {
+      "enterable": true,
+      "solarPanels": true,
+      "signText": "\u2615 The Caf\u00e9",
+      "signBg": "0x2d1a0e",
+      "signColor": "0xffd700"
+    }
+  },
+  {
+    "id": "aquarium",
+    "label": "Elliot's Aquarium",
+    "x": 150,
+    "z": -80,
+    "rotY": -0.6,
+    "w": 20,
+    "h": 9,
+    "d": 15,
+    "factory": "makeAquarium",
+    "options": {}
+  },
+  {
+    "id": "house-1",
+    "label": "House",
+    "x": -30,
+    "z": -20,
+    "rotY": 0.3,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xffeaa7",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-2",
+    "label": "House",
+    "x": -40,
+    "z": 10,
+    "rotY": -0.2,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xfdcb6e",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-3",
+    "label": "House",
+    "x": 35,
+    "z": 15,
+    "rotY": 0.5,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xf8e8d0",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-4",
+    "label": "House",
+    "x": 40,
+    "z": -15,
+    "rotY": -0.4,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xdfe6e9",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-5",
+    "label": "House",
+    "x": -15,
+    "z": -60,
+    "rotY": 0.1,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xfab1a0",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-6",
+    "label": "House",
+    "x": 25,
+    "z": -65,
+    "rotY": -0.3,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xffeaa7",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-7",
+    "label": "House",
+    "x": -45,
+    "z": -60,
+    "rotY": 0.4,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xf8e8d0",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-8",
+    "label": "House",
+    "x": 45,
+    "z": 60,
+    "rotY": -0.6,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xfdcb6e",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-9",
+    "label": "House",
+    "x": -50,
+    "z": 70,
+    "rotY": 0.2,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xdfe6e9",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-10",
+    "label": "House",
+    "x": -120,
+    "z": -60,
+    "rotY": -0.1,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xfab1a0",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-11",
+    "label": "House",
+    "x": 120,
+    "z": -20,
+    "rotY": 0.5,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xffeaa7",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  },
+  {
+    "id": "house-12",
+    "label": "House",
+    "x": -30,
+    "z": 120,
+    "rotY": -0.3,
+    "w": 8,
+    "h": 5.5,
+    "d": 7,
+    "wallColor": "0xfdcb6e",
+    "roofColor": "0xd63031",
+    "options": {
+      "solarPanels": true
+    }
+  }
+]

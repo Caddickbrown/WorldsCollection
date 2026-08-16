@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flora Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1f1a; color: #ccc; font-family: monospace; overflow: hidden; }
+    canvas { display: block; }
+    #ui {
+      position: fixed; top: 16px; left: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+      z-index: 10;
+    }
+    #stats {
+      background: #0008; padding: 10px 14px; border-radius: 6px;
+      font-size: 12px; line-height: 1.7;
+    }
+    #controls {
+      background: #0008; padding: 10px 14px; border-radius: 6px;
+      font-size: 12px; line-height: 2;
+    }
+    label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    input[type=range] { width: 110px; accent-color: #7ec87e; }
+    input[type=number] { width: 70px; background: #222; border: 1px solid #444;
+      color: #ccc; padding: 2px 5px; border-radius: 3px; }
+    button {
+      background: #2a3a2a; border: 1px solid #4a6a4a; color: #aed6ae;
+      padding: 4px 10px; border-radius: 4px; cursor: pointer; font-family: monospace;
+      font-size: 12px;
+    }
+    button:hover { background: #3a4e3a; }
+    #zone-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+    .zone-btn { font-size: 11px; padding: 3px 7px; }
+    .zone-btn.active { background: #4a7a4a; border-color: #7ec87e; color: #c8f0c8; }
+    #seed-row { display: flex; gap: 6px; align-items: center; }
+  </style>
+</head>
+<body>
+<div id="ui">
+  <div id="stats">Loading...</div>
+  <div id="controls">
+    <div id="zone-btns"></div>
+    <br>
+    <label>Seed <div id="seed-row">
+      <input type="number" id="seed-in" value="42187" min="0" max="999999">
+      <button id="rand-btn">🎲 Random</button>
+    </div></label>
+    <label>Wind <input type="range" id="wind-slider" min="0" max="1" step="0.01" value="0.3"></label>
+    <label>Show roots <input type="checkbox" id="roots-cb" checked></label>
+    <label>Show leaves <input type="checkbox" id="leaves-cb" checked></label>
+    <br>
+    <button id="regen-btn">↺ Regenerate</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { randomGenome, resolve } from './gen/genome.js';
+import { buildBranchGeometry } from './gen/branchMesh.js';
+import { generateFoliage } from './gen/foliage.js';
+import { pigmentToColor } from './gen/colorRamp.js';
+import { createWindSolver } from './gen/windSolver.js';
+import { WIND_TEX_WIDTH } from './gen/windSkinGlsl.js';
+
+// ── Scene ────────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1f1a);
+scene.fog = new THREE.Fog(0x1a1f1a, 18, 40);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 200);
+camera.position.set(0, 2, 7);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.5, 0);
+controls.enableDamping = true;
+
+// Lighting
+const sun = new THREE.DirectionalLight(0xfff8e8, 2.2);
+sun.position.set(4, 8, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.1;
+sun.shadow.camera.far = 40;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -6;
+sun.shadow.camera.right = sun.shadow.camera.top = 6;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0xa0c8b0, 1.8));
+scene.add(new THREE.HemisphereLight(0x8ad0a8, 0x3a5030, 1.2));
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(12, 48),
+  new THREE.MeshStandardMaterial({ color: 0x2a3d20, roughness: 0.95 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ── Zone envelopes ───────────────────────────────────────────────────────────
+const ZONES = {
+  forest:    { gravity:1, medium:'air', energy:'photo', biochem:'carbon', light:0.45, sunAngle:0.35, wind:0.15, aridity:0.10, temperature:12 },
+  plains:    { gravity:1, medium:'air', energy:'photo', biochem:'carbon', light:0.80, sunAngle:0.20, wind:0.30, aridity:0.35, temperature:13 },
+  clifftop:  { gravity:1, medium:'air', energy:'photo', biochem:'carbon', light:0.80, sunAngle:0.15, wind:0.85, aridity:0.60, temperature:10 },
+  highland:  { gravity:1, medium:'air', energy:'photo', biochem:'carbon', light:0.55, sunAngle:0.20, wind:0.45, aridity:0.25, temperature: 8 },
+  saltmarsh: { gravity:1, medium:'air', energy:'photo', biochem:'carbon', light:0.70, sunAngle:0.30, wind:0.35, aridity:0.00, temperature:14 },
+  coast:     { gravity:1, medium:'air', energy:'photo', biochem:'carbon', light:0.75, sunAngle:0.20, wind:0.55, aridity:0.45, temperature:12 },
+};
+
+// ── Wind DataTexture + Solver ─────────────────────────────────────────────────
+let windTex = null, windSolver = null;
+
+function makeWindTex(boneCount) {
+  const rows = Math.max(1, boneCount);
+  const data = new Float32Array(WIND_TEX_WIDTH * rows * 4);
+  const tex = new THREE.DataTexture(data, WIND_TEX_WIDTH, rows, THREE.RGBAFormat, THREE.FloatType);
+  tex.magFilter = tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.flipY = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ── Build a tree ─────────────────────────────────────────────────────────────
+let treeGroup = null;
+let currentGeo = null;
+let showRoots = true, showLeaves = true;
+let activeZone = 'forest';
+let currentSeed = 42187;
+const clock = new THREE.Clock();
+
+function buildTree(seed, zone) {
+  // Dispose old
+  if (treeGroup) {
+    treeGroup.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    scene.remove(treeGroup);
+  }
+  if (windTex) { windTex.dispose(); windTex = null; }
+
+  const env = ZONES[zone] ?? ZONES.forest;
+  const genome = randomGenome(env, seed >>> 0);
+
+  // Enforce minimum fullness so the preview always shows a well-branched tree.
+  // In Island the biome envelope handles this naturally; here we just want good visuals.
+  genome.branchiness     = Math.max(genome.branchiness,     0.65);
+  genome.branchFactorN   = Math.max(genome.branchFactorN,   0.55);
+  genome.appendageDensity= Math.max(genome.appendageDensity,0.90);
+  genome.leafSize        = Math.max(genome.leafSize,         1.2);
+  genome.trunkHeight     = Math.max(genome.trunkHeight ?? 0.5, 0.5);
+  const result = resolve(genome, env);
+  const geo = buildBranchGeometry(result.graph);
+  currentGeo = geo;
+
+  treeGroup = new THREE.Group();
+
+  // ── Branch mesh ──────────────────────────────────────────────────────────
+  const bg = new THREE.BufferGeometry();
+  bg.setAttribute('position',     new THREE.BufferAttribute(geo.positions,    3));
+  bg.setAttribute('normal',       new THREE.BufferAttribute(geo.normals,      3));
+  bg.setAttribute('uv',           new THREE.BufferAttribute(geo.uvs,          2));
+  bg.setIndex(new THREE.BufferAttribute(geo.indices, 1));
+
+  // Wind skin attributes (needed for the windSkinGlsl uniform hooks)
+  bg.setAttribute('windWeight',   new THREE.BufferAttribute(geo.windWeight,   1));
+  bg.setAttribute('boneIndex',    new THREE.BufferAttribute(geo.boneIndex,    1));
+  bg.setAttribute('boneFraction', new THREE.BufferAttribute(geo.boneFraction, 1));
+
+  // Bark colour — proper brown, independent of leaf pigment
+  const barkHue = genome.barkHue ?? 0.08;
+  const barkL   = genome.barkLightness ?? 0.22;
+  function hsl2rgb(h,s,l){ const a=s*Math.min(l,1-l),f=n=>{const k=(n+h*12)%12;return l-a*Math.max(-1,Math.min(k-3,9-k,1));}; return [f(0),f(8),f(4)]; }
+  const [br,bg2,bb] = hsl2rgb(barkHue, 0.4, barkL);
+  const barkColor = new THREE.Color(br, bg2, bb);
+
+  const branchMat = new THREE.MeshStandardMaterial({
+    color: barkColor,
+    roughness: 0.88,
+    metalness: 0.02,
+  });
+  const branchMesh = new THREE.Mesh(bg, branchMat);
+  branchMesh.castShadow = true;
+  branchMesh.receiveShadow = true;
+  treeGroup.add(branchMesh);
+
+  // ── Foliage InstancedMesh ────────────────────────────────────────────────
+  // Leaf colour from pigment (the actual genome value)
+  const [lr, lg, lb] = pigmentToColor(genome.pigment);
+
+  const foliage = result.foliage;
+  if (foliage && foliage.count > 0 && showLeaves) {
+    const baseLeafSize = 0.22;  // bigger cards — was 0.06
+    const leafGeo = new THREE.PlaneGeometry(baseLeafSize, baseLeafSize * 1.4);
+    const leafMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(lr, lg, lb),
+      roughness: 0.85,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+      alphaTest: 0.1,
+    });
+    const iMesh = new THREE.InstancedMesh(leafGeo, leafMat, foliage.count);
+    iMesh.castShadow = true;
+
+    const dummy = new THREE.Object3D();
+    const p = foliage.position, n = foliage.normal, sc = foliage.scale, ro = foliage.rotation;
+    const exp = foliage.exposure;
+    // Simple seeded hash for per-leaf random rotations
+    const lhash = (i) => { let h = i * 2654435761; h ^= h >>> 16; return (h >>> 0) / 0xFFFFFFFF; };
+
+    for (let i = 0; i < foliage.count; i++) {
+      const ii = i * 3;
+      dummy.position.set(p[ii], p[ii+1], p[ii+2]);
+      // Random orientation — spread on all axes so cards don't all face same way
+      dummy.rotation.set(
+        lhash(i * 3 + 0) * Math.PI * 2,
+        lhash(i * 3 + 1) * Math.PI * 2,
+        ro[i]
+      );
+      // Scale: genome leafSize * per-leaf scale from SoA
+      const s = Math.min(sc[i], 1.4) * (genome.leafSize ?? 1.0) * 1.4;
+      dummy.scale.setScalar(s);
+      dummy.updateMatrix();
+      iMesh.setMatrixAt(i, dummy.matrix);
+
+      // Exposure tint: inner leaves darker, outer lighter
+      const shade = 0.55 + exp[i] * 0.45;
+      iMesh.setColorAt(i, new THREE.Color(lr * shade, lg * shade, lb * shade));
+    }
+    iMesh.instanceMatrix.needsUpdate = true;
+    if (iMesh.instanceColor) iMesh.instanceColor.needsUpdate = true;
+    treeGroup.add(iMesh);
+  }
+
+  // ── Wind solver ──────────────────────────────────────────────────────────
+  windTex = makeWindTex(geo.bones_wind.count);
+  windSolver = createWindSolver(geo.bones_wind);
+
+  scene.add(treeGroup);
+
+  // Frame camera
+  const b = geo.bounds;
+  const cy = (b.min[1] + b.max[1]) / 2;
+  const height = b.max[1] - b.min[1];
+  controls.target.set(0, cy, 0);
+  camera.position.set(0, cy * 0.8, height * 1.6);
+  controls.update();
+
+  // Stats
+  document.getElementById('stats').innerHTML =
+    `Zone: <b>${zone}</b> | Seed: <b>${seed}</b><br>` +
+    `Nodes: ${result.graph.nodes.length} | Bones: ${result.graph.bones.length}<br>` +
+    `Verts: ${geo.vertexCount.toLocaleString()} | Tris: ${geo.triangleCount.toLocaleString()}<br>` +
+    `Wind bones: ${geo.bones_wind.count} | Leaves: ${foliage?.count ?? 0}<br>` +
+    `Height: ${(b.max[1] - b.min[1]).toFixed(2)}m`;
+}
+
+// ── Zone buttons ─────────────────────────────────────────────────────────────
+const zoneContainer = document.getElementById('zone-btns');
+Object.keys(ZONES).forEach(z => {
+  const btn = document.createElement('button');
+  btn.className = 'zone-btn' + (z === activeZone ? ' active' : '');
+  btn.textContent = z;
+  btn.onclick = () => {
+    activeZone = z;
+    document.querySelectorAll('.zone-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    buildTree(currentSeed, activeZone);
+  };
+  zoneContainer.appendChild(btn);
+});
+
+document.getElementById('regen-btn').onclick = () => buildTree(currentSeed, activeZone);
+document.getElementById('rand-btn').onclick = () => {
+  currentSeed = Math.floor(Math.random() * 999999);
+  document.getElementById('seed-in').value = currentSeed;
+  buildTree(currentSeed, activeZone);
+};
+document.getElementById('seed-in').addEventListener('change', e => {
+  currentSeed = parseInt(e.target.value) || 0;
+  buildTree(currentSeed, activeZone);
+});
+document.getElementById('roots-cb').addEventListener('change', e => {
+  showRoots = e.target.checked;
+  buildTree(currentSeed, activeZone);
+});
+document.getElementById('leaves-cb').addEventListener('change', e => {
+  showLeaves = e.target.checked;
+  buildTree(currentSeed, activeZone);
+});
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+const windStrengthSlider = document.getElementById('wind-slider');
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  const strength = parseFloat(windStrengthSlider.value);
+
+  // Animate wind solver each frame
+  if (windSolver && windTex && strength > 0) {
+    windSolver.solve(windTex.image.data, t, strength, 1, 0);
+    windTex.needsUpdate = true;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+buildTree(currentSeed, activeZone);
+animate();
+</script>
+</body>
+</html>

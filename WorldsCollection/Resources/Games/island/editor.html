@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Island Editor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* Toolbar */
+    .toolbar { background: #0f3460; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; border-bottom: 1px solid #4488ff33; }
+    .toolbar button { background: #16213e; color: #e0e0e0; border: 1px solid #4488ff55; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+    .toolbar button:hover { background: #4488ff; border-color: #4488ff; }
+    .toolbar button.active { background: #4488ff; border-color: #66aaff; }
+    .toolbar .save-btn { background: #27ae60; border-color: #2ecc71; }
+    .toolbar .save-btn:hover { background: #2ecc71; }
+    .toolbar .save-btn.dirty { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .toolbar .sep { color: #4488ff44; margin: 0 2px; user-select: none; }
+    #status-bar { margin-left: auto; font-size: 12px; color: #88aacc; }
+    .toolbar a { color: #88cc88; text-decoration: none; font-size: 13px; padding: 6px 12px; border: 1px solid #88cc8855; border-radius: 4px; }
+    .toolbar a:hover { background: #88cc8833; }
+
+    /* Main layout */
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* Left sidebar */
+    .sidebar-left { width: 280px; background: #16213e; overflow-y: auto; border-right: 1px solid #0f3460; flex-shrink: 0; }
+    .sidebar-left h3 { padding: 10px 12px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #4488ff; }
+    .tree-section { border-bottom: 1px solid #0f3460; }
+    .tree-section h4 { padding: 8px 12px 4px; font-size: 12px; color: #88aacc; cursor: pointer; user-select: none; }
+    .tree-section h4:hover { color: #aaccff; }
+    .tree-item { padding: 5px 12px 5px 20px; cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid transparent; }
+    .tree-item:hover { background: #0f3460; }
+    .tree-item.selected { background: #0f3460; border-left-color: #4488ff; color: #ffffff; }
+
+    /* Viewport */
+    .viewport { flex: 1; position: relative; overflow: hidden; }
+    .viewport canvas { display: block; }
+
+    /* Right sidebar */
+    .sidebar-right { width: 340px; background: #16213e; overflow-y: auto; border-left: 1px solid #0f3460; padding: 12px; flex-shrink: 0; }
+    .sidebar-right h3 { font-size: 14px; margin-bottom: 10px; color: #4488ff; }
+    .sidebar-right .empty { color: #667; font-style: italic; padding: 20px 0; text-align: center; }
+    .inspector-group { margin-bottom: 12px; }
+    .inspector-group h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #4488ff88; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #0f3460; }
+    label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 13px; color: #aab; }
+    label span { min-width: 70px; flex-shrink: 0; }
+    input[type=text], input[type=number], textarea, select { background: #0f3460; color: #e0e0e0; border: 1px solid #4488ff55; border-radius: 4px; padding: 4px 8px; width: 100%; font-size: 13px; font-family: inherit; }
+    input[type=text]:focus, input[type=number]:focus, textarea:focus { border-color: #4488ff; outline: none; }
+    input[type=color] { width: 40px; height: 28px; padding: 2px; background: #0f3460; border: 1px solid #4488ff55; border-radius: 4px; cursor: pointer; }
+    input[type=checkbox] { width: 18px; height: 18px; accent-color: #4488ff; }
+    textarea { resize: vertical; min-height: 60px; }
+    .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-row button { flex: 1; padding: 8px; font-size: 13px; border-radius: 4px; cursor: pointer; border: 1px solid; }
+    .btn-apply { background: #27ae60; border-color: #2ecc71; color: #fff; }
+    .btn-apply:hover { background: #2ecc71; }
+    .btn-delete { background: #c0392b; border-color: #e74c3c; color: #fff; }
+    .btn-delete:hover { background: #e74c3c; }
+
+    /* Terrain mode */
+    #terrain-view { display: none; flex: 1; overflow: hidden; }
+    .terrain-panel { width: 240px; background: #16213e; padding: 12px; flex-shrink: 0; overflow-y: auto; }
+    .terrain-panel h3 { font-size: 14px; margin-bottom: 10px; color: #4488ff; }
+    .terrain-panel .tool-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .terrain-panel .tool-btn { background: #0f3460; color: #e0e0e0; border: 1px solid #4488ff55; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; flex: 1; min-width: 90px; text-align: center; }
+    .terrain-panel .tool-btn:hover { background: #4488ff; }
+    .terrain-panel .tool-btn.active { background: #4488ff; border-color: #66aaff; }
+    .terrain-panel label { display: block; margin: 8px 0; font-size: 13px; color: #aab; }
+    .terrain-panel input[type=range] { width: 100%; margin-top: 4px; accent-color: #4488ff; }
+    .terrain-panel hr { border: none; border-top: 1px solid #0f3460; margin: 12px 0; }
+    .terrain-panel .terrain-tip { margin-top: 12px; padding: 8px; background: #0f346066; border-radius: 4px; }
+    .terrain-panel .terrain-tip small { color: #88aacc; line-height: 1.4; }
+    .terrain-canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #111828; }
+    #terrain-legend { width: 200px; background: #16213e; padding: 12px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid #0f3460; }
+    #terrain-legend h4 { font-size: 13px; color: #4488ff; margin-bottom: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 4px 0; color: #ccc; }
+    .legend-item span { display: inline-block; width: 16px; height: 16px; border-radius: 3px; border: 1px solid #ffffff22; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="active" id="btn-move" title="Click & drag to move objects">↖ Move</button>
+  <button id="btn-view" title="View only — orbit freely">👁 View</button>
+  <span class="sep">|</span>
+  <button id="btn-add-building">+ Building</button>
+  <button id="btn-add-npc">+ NPC</button>
+  <button id="btn-add-area">+ Area</button>
+  <span class="sep">|</span>
+  <button id="btn-terrain">🏔 Terrain</button>
+  <span class="sep">|</span>
+  <button id="btn-save" class="save-btn">💾 Save All</button>
+  <span id="status-bar">Loading...</span>
+  <span class="sep">|</span>
+  <a href="/" target="_blank">▶ Play Game</a>
+</div>
+
+<div class="main">
+  <div class="sidebar-left" id="scene-tree"></div>
+  <div class="viewport" id="viewport"></div>
+  <div class="sidebar-right" id="inspector">
+    <h3>Inspector</h3>
+    <div class="empty">Select an object to inspect</div>
+  </div>
+
+  <div id="terrain-view">
+    <div class="terrain-panel" id="terrain-tools">
+      <h3>🏔 Terrain Tools</h3>
+      <div class="tool-group">
+        <button class="tool-btn active" data-tool="raise">⬆ Raise</button>
+        <button class="tool-btn" data-tool="lower">⬇ Lower</button>
+        <button class="tool-btn" data-tool="flatten">▬ Flatten</button>
+        <button class="tool-btn" data-tool="smooth">〜 Smooth</button>
+      </div>
+      <div class="tool-group" style="margin-top:6px;">
+        <button class="tool-btn" data-tool="paint-sea">🌊 Sea</button>
+        <button class="tool-btn" data-tool="paint-beach">🏖 Beach</button>
+        <button class="tool-btn" data-tool="paint-grass">🌿 Grass</button>
+        <button class="tool-btn" data-tool="paint-hills">⛰ Hills</button>
+      </div>
+      <label>Brush Size
+        <input type="range" id="brush-size" min="1" max="60" value="5">
+        <span id="brush-size-val">5</span>
+      </label>
+      <label>Strength
+        <input type="range" id="brush-strength" min="1" max="10" value="5">
+        <span id="brush-strength-val">5</span>
+      </label>
+      <hr>
+      <label>Grid Resolution
+        <select id="terrain-grid-select" style="width:100%;margin-top:4px;background:#0f3460;color:#e0e0e0;border:1px solid #4488ff55;border-radius:4px;padding:4px;">
+          <option value="64">64×64 (low)</option>
+          <option value="128" selected>128×128 (default)</option>
+          <option value="256">256×256 (high)</option>
+          <option value="512">512×512 (ultra)</option>
+        </select>
+      </label>
+      <button id="btn-resize-terrain" style="background:#1a5276;color:#fff;border:1px solid #4488ff55;border-radius:4px;padding:8px;width:100%;cursor:pointer;font-size:13px;margin-top:4px;">⤢ Resize (resample)</button>
+      <hr>
+      <label>Island Size (world units)
+        <select id="terrain-worldsize-select" style="width:100%;margin-top:4px;background:#0f3460;color:#e0e0e0;border:1px solid #4488ff55;border-radius:4px;padding:4px;">
+          <option value="300">300 — Small</option>
+          <option value="600" selected>600 — Medium (default)</option>
+          <option value="900">900 — Large</option>
+          <option value="1200">1200 — Huge</option>
+        </select>
+      </label>
+      <button id="btn-resize-worldsize" style="background:#1a5276;color:#fff;border:1px solid #4488ff55;border-radius:4px;padding:8px;width:100%;cursor:pointer;font-size:13px;margin-top:4px;">🌍 Apply Island Size</button>
+      <hr>
+      <button id="btn-reset-terrain" style="background:#c0392b;color:#fff;border:1px solid #e74c3c;border-radius:4px;padding:8px;width:100%;cursor:pointer;font-size:13px;">↺ Reset to Default</button>
+      <div class="terrain-tip">
+        <small>Click and drag on the canvas to paint terrain. Buildings shown as yellow dots.</small>
+      </div>
+    </div>
+    <div class="terrain-canvas-wrap" style="position:relative;overflow:hidden;cursor:crosshair;">
+      <canvas id="terrain-canvas" style="display:block;transform-origin:0 0;"></canvas>
+      <div id="brush-cursor" style="position:absolute;pointer-events:none;border:2px solid rgba(255,255,255,0.8);border-radius:50%;display:none;box-shadow:0 0 0 1px rgba(0,0,0,0.5);transform:translate(-50%,-50%);"></div>
+      <div id="terrain-zoom-hint" style="position:absolute;bottom:6px;right:6px;font-size:11px;color:rgba(255,255,255,0.5);pointer-events:none;">scroll=zoom · right-drag=pan · dbl-click=reset</div>
+    </div>
+    <div id="terrain-legend">
+      <h4>Height Legend</h4>
+      <div class="legend-item"><span style="background:#1a6fa8"></span> Sea (0)</div>
+      <div class="legend-item"><span style="background:#c8b878"></span> Beach (0–4m)</div>
+      <div class="legend-item"><span style="background:#7ab548"></span> Low land (4–8m)</div>
+      <div class="legend-item"><span style="background:#5a9430"></span> Mid land (8–14m)</div>
+      <div class="legend-item"><span style="background:#8b7355"></span> Hills (14–19m)</div>
+      <div class="legend-item"><span style="background:#c8c8c8"></span> High (19m+)</div>
+      <hr>
+      <div id="terrain-stats">
+        <small id="cursor-height">Hover to see height</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.161/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// ─── State ──────────────────────────────────────────────────────────────────
+let buildingsData = [];
+let npcsData = [];
+let areasData = [];
+let isDirty = false;
+let mode = 'move'; // 'move' | 'view'
+
+const buildingMeshes = {};
+const npcMeshes = {};
+const areaMeshes = {};
+const labels = [];
+const objectLabels = {}; // id → CSS2DObject, for label-follows-drag
+let clickableObjects = [];
+
+// Static props (from scene.js — bikes, buggies, windmill, lighthouse, postboxes)
+const PROPS = [
+  { id:'bike_town1',   label:'🚲 Bike',       x:  -8, z:   9, color:'#2d7a2d' },
+  { id:'bike_town2',   label:'🚲 Bike',       x:  10, z:  -5, color:'#d44e00' },
+  { id:'bike_bakery',  label:'🚲 Bike',       x: -62, z: -36, color:'#f9ca24' },
+  { id:'bike_post',    label:'🚲 Bike',       x:  57, z: -38, color:'#4a90d9' },
+  { id:'bike_cafe',    label:'🚲 Bike',       x:   6, z: -52, color:'#9b59b6' },
+  { id:'bike_library', label:'🚲 Bike',       x:  76, z:  44, color:'#2d7a2d' },
+  { id:'bike_workshop',label:'🚲 Bike',       x: -82, z:  44, color:'#d44e00' },
+  { id:'bike_dock',    label:'🚲 Bike',       x:  -2, z: 232, color:'#4a90d9' },
+  { id:'bike_farm',    label:'🚲 Bike',       x:-172, z:  82, color:'#f9ca24' },
+  { id:'bike_school',  label:'🚲 Bike',       x:  38, z: -68, color:'#2d7a2d' },
+  { id:'bike_pub',     label:'🚲 Bike',       x: -32, z: -68, color:'#e74c3c' },
+  { id:'buggy_town',   label:'🚗 Buggy',      x:  18, z:  10, color:'#3cb371' },
+  { id:'buggy_farm',   label:'🚗 Buggy',      x:-165, z:  85, color:'#3cb371' },
+  { id:'windmill',     label:'🌀 Windmill',   x:-100, z:-180, color:'#f0f0f0' },
+  { id:'wind_turbine', label:'⚡ Turbine',    x:-106, z:-185, color:'#ccddff' },
+  { id:'postbox',      label:'📮 Post Box',   x:  52, z: -36, color:'#cc0000' },
+  { id:'lighthouse',   label:'🔦 Lighthouse', x:  42, z: 248, color:'#ffffff' },
+];
+const propMeshes = {};
+
+let selectedObject = null;
+let selectionHelper = null;
+let isDraggingObject = false;
+let dragOffset = new THREE.Vector3();
+let mouseDownPos = new THREE.Vector2();
+let mouseMoved = false;
+
+const statusBar = document.getElementById('status-bar');
+const viewportEl = document.getElementById('viewport');
+
+// ─── Three.js setup ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2a3a);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 2000);
+camera.position.set(0, 250, 300);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+viewportEl.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.left = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+viewportEl.appendChild(labelRenderer.domElement);
+
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.1;
+orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
+orbitControls.minDistance = 20;
+orbitControls.maxDistance = 800;
+
+// Lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(200, 300, 100);
+scene.add(dirLight);
+
+// Terrain heightmap mesh (replaced flat ground — built in loadTerrainMesh)
+let terrainMesh3D = null;
+
+// Grid
+const gridHelper = new THREE.GridHelper(600, 60, 0x4488ff22, 0x4488ff11);
+gridHelper.position.y = 0.05;
+scene.add(gridHelper);
+
+// Sea plane
+const seaGeo = new THREE.PlaneGeometry(2000, 2000);
+const seaMat = new THREE.MeshStandardMaterial({ color: 0x3a9fbf, roughness: 0.6 });
+const sea = new THREE.Mesh(seaGeo, seaMat);
+sea.rotation.x = -Math.PI / 2;
+sea.position.y = -0.5;
+scene.add(sea);
+
+// Invisible raycast plane for dragging
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const raycaster = new THREE.Raycaster();
+
+// ─── Load data ──────────────────────────────────────────────────────────────
+async function loadJSON(file) {
+  try {
+    const r = await fetch(`/data/${file}.json`);
+    if (!r.ok) return [];
+    return await r.json();
+  } catch { return []; }
+}
+
+function hColor3D(h) {
+  const maxH = 25;
+  if (h <= 0) return [0.1, 0.44, 0.67];
+  const t = Math.min(1, h / maxH);
+  if (t < 0.08) return [0.91, 0.84, 0.64]; // beach sand
+  if (t < 0.15) return [0.78, 0.72, 0.47];
+  if (t < 0.3)  return [0.48, 0.71, 0.28];
+  if (t < 0.55) return [0.35, 0.58, 0.19];
+  if (t < 0.75) return [0.54, 0.45, 0.33];
+  return [0.78, 0.78, 0.78];
+}
+
+function updateTerrainMesh3D() {
+  if (!terrainMesh3D || !terrainData) return;
+  const positions = terrainMesh3D.geometry.attributes.position;
+  const grid = terrainData.grid;
+  const colorArr = [];
+  for (let j = 0; j < grid; j++) {
+    for (let i = 0; i < grid; i++) {
+      const idx = j * grid + i;
+      const h = terrainData.data[idx];
+      positions.setY(idx, h <= 0 ? -0.5 : h);
+      const [r, g, b] = hColor3D(h);
+      colorArr.push(r, g, b);
+    }
+  }
+  positions.needsUpdate = true;
+  terrainMesh3D.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colorArr), 3));
+  terrainMesh3D.geometry.computeVertexNormals();
+}
+
+function buildTerrainMesh3D(td) {
+  // Remove old mesh if present
+  if (terrainMesh3D) { scene.remove(terrainMesh3D); terrainMesh3D = null; }
+  const grid = td.grid;
+  const worldSize = td.worldSize || 600;
+  const segs = grid - 1;
+  const geo = new THREE.PlaneGeometry(worldSize, worldSize, segs, segs);
+  geo.rotateX(-Math.PI / 2);
+  const positions = geo.attributes.position;
+  const colors = [];
+  for (let j = 0; j < grid; j++) {
+    for (let i = 0; i < grid; i++) {
+      const idx = j * grid + i;
+      const h = td.data[idx];
+      positions.setY(idx, h <= 0 ? -0.5 : h);
+      const [r, g, b] = hColor3D(h);
+      colors.push(r, g, b);
+    }
+  }
+  positions.needsUpdate = true;
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+  terrainMesh3D = new THREE.Mesh(geo, mat);
+  terrainMesh3D.position.y = -0.1;
+  scene.add(terrainMesh3D);
+}
+
+function resampleTerrain(oldData, oldGrid, newGrid) {
+  const out = new Array(newGrid * newGrid);
+  for (let j = 0; j < newGrid; j++) {
+    for (let i = 0; i < newGrid; i++) {
+      const gx = i / (newGrid - 1) * (oldGrid - 1);
+      const gz = j / (newGrid - 1) * (oldGrid - 1);
+      const x0 = Math.max(0, Math.min(oldGrid - 2, Math.floor(gx)));
+      const z0 = Math.max(0, Math.min(oldGrid - 2, Math.floor(gz)));
+      const tx = gx - x0, tz = gz - z0;
+      const h00 = oldData[z0 * oldGrid + x0];
+      const h10 = oldData[z0 * oldGrid + (x0+1)];
+      const h01 = oldData[(z0+1) * oldGrid + x0];
+      const h11 = oldData[(z0+1) * oldGrid + (x0+1)];
+      out[j * newGrid + i] = h00*(1-tx)*(1-tz) + h10*tx*(1-tz) + h01*(1-tx)*tz + h11*tx*tz;
+    }
+  }
+  return out;
+}
+
+/** Bilinear-interpolate terrain height at world position (x, z) */
+function sampleTerrainAt(wx, wz) {
+  if (!terrainData) return 0;
+  const { grid, worldSize, data } = terrainData;
+  const ws = worldSize || 600;
+  const half = ws / 2;
+  const gx = (wx + half) / ws * (grid - 1);
+  const gz = (wz + half) / ws * (grid - 1);
+  const x0 = Math.max(0, Math.min(grid - 2, Math.floor(gx)));
+  const z0 = Math.max(0, Math.min(grid - 2, Math.floor(gz)));
+  const tx = gx - x0, tz = gz - z0;
+  const h00 = data[z0 * grid + x0];
+  const h10 = data[z0 * grid + (x0 + 1)];
+  const h01 = data[(z0 + 1) * grid + x0];
+  const h11 = data[(z0 + 1) * grid + (x0 + 1)];
+  const h = h00 * (1-tx)*(1-tz) + h10 * tx*(1-tz) + h01 * (1-tx)*tz + h11 * tx*tz;
+  return Math.max(0, h);
+}
+
+async function loadTerrainMesh() {
+  try {
+    const td = await fetch('/data/terrain.json').then(r => r.json());
+    terrainData = td;
+    // Sync grid selector to loaded size
+    const sel = document.getElementById('terrain-grid-select');
+    if (sel) sel.value = String(td.grid);
+    // Sync worldSize selector to loaded value
+    const wsSel = document.getElementById('terrain-worldsize-select');
+    if (wsSel && td.worldSize) {
+      // Find closest option
+      const opts = Array.from(wsSel.options).map(o => parseInt(o.value));
+      const closest = opts.reduce((a, b) => Math.abs(b - td.worldSize) < Math.abs(a - td.worldSize) ? b : a);
+      wsSel.value = String(closest === td.worldSize ? td.worldSize : td.worldSize);
+    }
+    buildTerrainMesh3D(td);
+  } catch (e) {
+    // Fall back to flat green ground
+    const geo = new THREE.PlaneGeometry(600, 600);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6ab04c, roughness: 0.9 });
+    terrainMesh3D = new THREE.Mesh(geo, mat);
+    terrainMesh3D.rotation.x = -Math.PI / 2;
+    terrainMesh3D.position.y = -0.1;
+    scene.add(terrainMesh3D);
+  }
+}
+
+async function init() {
+  [buildingsData, npcsData, areasData] = await Promise.all([
+    loadJSON('buildings'),
+    loadJSON('npcs'),
+    loadJSON('areas'),
+  ]);
+
+  await loadTerrainMesh();
+  rebuildScene();
+  updateSceneTree();
+  onResize();
+  statusBar.textContent = `Ready — ${buildingsData.length} buildings, ${npcsData.length} NPCs, ${areasData.length} areas`;
+}
+
+// ─── Scene builders ─────────────────────────────────────────────────────────
+function clearScene() {
+  // Remove old meshes
+  for (const id of Object.keys(buildingMeshes)) {
+    scene.remove(buildingMeshes[id].body);
+    scene.remove(buildingMeshes[id].roof);
+    delete buildingMeshes[id];
+  }
+  for (const id of Object.keys(npcMeshes)) {
+    scene.remove(npcMeshes[id]);
+    delete npcMeshes[id];
+  }
+  for (const id of Object.keys(areaMeshes)) {
+    scene.remove(areaMeshes[id]);
+    delete areaMeshes[id];
+  }
+  for (const id of Object.keys(propMeshes)) {
+    scene.remove(propMeshes[id]);
+    delete propMeshes[id];
+  }
+  for (const lbl of labels) scene.remove(lbl);
+  labels.length = 0;
+  for (const k of Object.keys(objectLabels)) delete objectLabels[k];
+  clickableObjects = [];
+  if (selectionHelper) { scene.remove(selectionHelper); selectionHelper = null; }
+  selectedObject = null;
+}
+
+function rebuildScene() {
+  clearScene();
+
+  // Buildings
+  buildingsData.forEach(b => addBuildingMesh(b));
+
+  // NPCs
+  npcsData.forEach(npc => addNPCMesh(npc));
+
+  // Areas
+  areasData.forEach(area => addAreaMesh(area));
+
+  // Static props (bikes, buggies, windmill, lighthouse, postboxes)
+  PROPS.forEach(p => addPropMarker(p));
+}
+
+function addBuildingMesh(b) {
+  const w = b.w || 8, h = b.h || 4, d = b.d || 6;
+  const wallColor = parseColor(b.wallColor);
+  const roofColor = parseColor(b.roofColor || '0x8b4513');
+  const bx = b.x || 0, bz = b.z || 0;
+  const terrY = sampleTerrainAt(bx, bz); // sit on terrain
+
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: wallColor, transparent: true, opacity: 0.85 });
+  const mesh = new THREE.Mesh(geo, bodyMat);
+  mesh.position.set(bx, terrY + h / 2, bz);
+  mesh.rotation.y = b.rotY || 0;
+  mesh.userData = { type: 'building', id: b.id, data: b };
+  scene.add(mesh);
+  clickableObjects.push(mesh);
+
+  // Roof
+  const roofGeo = new THREE.ConeGeometry(Math.max(w, d) * 0.7, h * 0.4, 4);
+  const roofMat = new THREE.MeshStandardMaterial({ color: roofColor });
+  const roof = new THREE.Mesh(roofGeo, roofMat);
+  roof.position.set(bx, terrY + h + h * 0.2, bz);
+  roof.rotation.y = (b.rotY || 0) + Math.PI / 4;
+  roof.userData = { type: 'building', id: b.id, data: b, isRoof: true };
+  scene.add(roof);
+  clickableObjects.push(roof);
+
+  buildingMeshes[b.id] = { body: mesh, roof };
+
+  addLabel(new THREE.Vector3(bx, terrY + h + h * 0.4 + 2, bz), b.label || b.id, '#ffdd88', b.id);
+}
+
+function addNPCMesh(npc) {
+  const geo = new THREE.SphereGeometry(1.5, 12, 8);
+  const color = parseColor(npc.color);
+  const npcMat = new THREE.MeshStandardMaterial({ color });
+  const mesh = new THREE.Mesh(geo, npcMat);
+  mesh.position.set(npc.startX || npc.x || 0, 2, npc.startZ || npc.z || 0);
+  mesh.userData = { type: 'npc', id: npc.id, data: npc };
+  scene.add(mesh);
+  clickableObjects.push(mesh);
+  npcMeshes[npc.id] = mesh;
+
+  addLabel(mesh.position.clone().add(new THREE.Vector3(0, 2, 0)), npc.name, '#ffdd88', npc.id);
+}
+
+function addAreaMesh(area) {
+  const radius = area.radius || 30;
+  const geo = new THREE.CircleGeometry(radius, 32);
+  const areaMat = new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, areaMat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(area.x || 0, 0.15, area.z || 0);
+  mesh.userData = { type: 'area', id: area.id, data: area };
+  scene.add(mesh);
+  clickableObjects.push(mesh);
+  areaMeshes[area.id] = mesh;
+
+  addLabel(new THREE.Vector3(area.x || 0, 1, area.z || 0), area.label || area.id, '#88aaff', area.id);
+}
+
+function addLabel(position, text, color = 'white', objectId = null) {
+  const div = document.createElement('div');
+  div.style.cssText = `color:${color};font-size:11px;font-family:system-ui,sans-serif;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;pointer-events:none;white-space:nowrap;`;
+  div.textContent = text;
+  const label = new CSS2DObject(div);
+  label.position.copy(position);
+  scene.add(label);
+  labels.push(label);
+  if (objectId) objectLabels[objectId] = label;
+}
+
+function addPropMarker(p) {
+  // Small diamond marker for each prop
+  const geo = new THREE.OctahedronGeometry(2.5, 0);
+  const col = parseInt(p.color.replace('#', ''), 16);
+  const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.5 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(p.x, 3, p.z);
+  mesh.userData = { type: 'prop', id: p.id, data: p };
+  scene.add(mesh);
+  propMeshes[p.id] = mesh;
+  addLabel(new THREE.Vector3(p.x, 7, p.z), p.label, '#aaddff');
+}
+
+function parseColor(c) {
+  if (typeof c === 'number') return c;
+  if (typeof c === 'string') {
+    if (c.startsWith('0x')) return parseInt(c, 16);
+    if (c.startsWith('#')) return parseInt(c.slice(1), 16);
+    return parseInt(c);
+  }
+  return 0xcccccc;
+}
+
+function colorToHex(c) {
+  const n = parseColor(c);
+  return '#' + n.toString(16).padStart(6, '0');
+}
+
+function hexToOx(hex) {
+  return '0x' + hex.replace('#', '');
+}
+
+// ─── Selection ──────────────────────────────────────────────────────────────
+function selectObject(mesh) {
+  if (selectionHelper) scene.remove(selectionHelper);
+  // If this is a roof, select the body instead
+  if (mesh.userData.isRoof && buildingMeshes[mesh.userData.id]) {
+    mesh = buildingMeshes[mesh.userData.id].body;
+  }
+  selectedObject = mesh;
+  const box = new THREE.BoxHelper(mesh, 0xffff00);
+  selectionHelper = box;
+  scene.add(box);
+  showInspector(mesh.userData);
+  highlightTreeItem(mesh.userData.id);
+}
+
+function deselectAll() {
+  if (selectionHelper) scene.remove(selectionHelper);
+  selectionHelper = null;
+  selectedObject = null;
+  document.getElementById('inspector').innerHTML = '<h3>Inspector</h3><div class="empty">Select an object to inspect</div>';
+  document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+}
+
+function highlightTreeItem(id) {
+  document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+  const el = document.querySelector(`.tree-item[data-id="${id}"]`);
+  if (el) { el.classList.add('selected'); el.scrollIntoView({ block: 'nearest' }); }
+}
+
+// ─── Inspector ──────────────────────────────────────────────────────────────
+function showInspector(userData) {
+  const panel = document.getElementById('inspector');
+  const { type, data } = userData;
+
+  if (type === 'building') {
+    panel.innerHTML = `
+      <h3>Building: ${data.label || data.id}</h3>
+      <div class="inspector-group"><h4>Identity</h4>
+        <label><span>ID</span><input type="text" id="insp-id" value="${data.id}" readonly style="opacity:0.6"></label>
+        <label><span>Label</span><input type="text" id="insp-label" value="${data.label || ''}"></label>
+        <label><span>Sign Text</span><input type="text" id="insp-signtext" value="${data.signText || ''}"></label>
+      </div>
+      <div class="inspector-group"><h4>Transform</h4>
+        <label><span>X</span><input type="number" id="insp-x" value="${data.x || 0}" step="0.5"></label>
+        <label><span>Z</span><input type="number" id="insp-z" value="${data.z || 0}" step="0.5"></label>
+        <label><span>Rotation Y</span><input type="number" id="insp-roty" value="${data.rotY || 0}" step="0.05"></label>
+      </div>
+      <div class="inspector-group"><h4>Dimensions</h4>
+        <label><span>Width</span><input type="number" id="insp-w" value="${data.w || 8}" step="0.5"></label>
+        <label><span>Height</span><input type="number" id="insp-h" value="${data.h || 4}" step="0.5"></label>
+        <label><span>Depth</span><input type="number" id="insp-d" value="${data.d || 6}" step="0.5"></label>
+      </div>
+      <div class="inspector-group"><h4>Appearance</h4>
+        <label><span>Wall Color</span><input type="color" id="insp-wallcolor" value="${colorToHex(data.wallColor || '0xc0a080')}"></label>
+        <label><span>Roof Color</span><input type="color" id="insp-roofcolor" value="${colorToHex(data.roofColor || '0x8b4513')}"></label>
+      </div>
+      <div class="inspector-group"><h4>Options</h4>
+        <label><span>Enterable</span><input type="checkbox" id="insp-enterable" ${data.options?.enterable ? 'checked' : ''}></label>
+        <label><span>Solar</span><input type="checkbox" id="insp-solar" ${data.options?.solarPanels ? 'checked' : ''}></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn-apply" id="insp-apply">Apply Changes</button>
+        <button class="btn-delete" id="insp-delete">Delete</button>
+      </div>`;
+    document.getElementById('insp-apply').onclick = () => applyBuildingChanges(data);
+    document.getElementById('insp-delete').onclick = () => deleteObject('building', data.id);
+  } else if (type === 'npc') {
+    const dialogue = Array.isArray(data.dialogue) ? data.dialogue.join('\n') : '';
+    panel.innerHTML = `
+      <h3>NPC: ${data.name || data.id}</h3>
+      <div class="inspector-group"><h4>Identity</h4>
+        <label><span>ID</span><input type="text" id="insp-id" value="${data.id}" readonly style="opacity:0.6"></label>
+        <label><span>Name</span><input type="text" id="insp-name" value="${data.name || ''}"></label>
+        <label><span>Job</span><input type="text" id="insp-job" value="${data.job || ''}"></label>
+      </div>
+      <div class="inspector-group"><h4>Appearance</h4>
+        <label><span>Color</span><input type="color" id="insp-color" value="${colorToHex(data.color || '0xcccccc')}"></label>
+      </div>
+      <div class="inspector-group"><h4>Position</h4>
+        <label><span>Start X</span><input type="number" id="insp-sx" value="${data.startX || data.x || 0}" step="1"></label>
+        <label><span>Start Z</span><input type="number" id="insp-sz" value="${data.startZ || data.z || 0}" step="1"></label>
+      </div>
+      <div class="inspector-group"><h4>Dialogue</h4>
+        <textarea id="insp-dialogue" rows="5" placeholder="One line per dialogue entry...">${dialogue}</textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn-apply" id="insp-apply">Apply Changes</button>
+        <button class="btn-delete" id="insp-delete">Delete</button>
+      </div>`;
+    document.getElementById('insp-apply').onclick = () => applyNPCChanges(data);
+    document.getElementById('insp-delete').onclick = () => deleteObject('npc', data.id);
+  } else if (type === 'area') {
+    panel.innerHTML = `
+      <h3>Area: ${data.label || data.id}</h3>
+      <div class="inspector-group"><h4>Identity</h4>
+        <label><span>ID</span><input type="text" id="insp-id" value="${data.id}" readonly style="opacity:0.6"></label>
+        <label><span>Label</span><input type="text" id="insp-label" value="${data.label || ''}"></label>
+        <label><span>Kind</span><input type="text" id="insp-kind" value="${data.kind || ''}"></label>
+      </div>
+      <div class="inspector-group"><h4>Position</h4>
+        <label><span>X</span><input type="number" id="insp-x" value="${data.x || 0}" step="1"></label>
+        <label><span>Z</span><input type="number" id="insp-z" value="${data.z || 0}" step="1"></label>
+        <label><span>Radius</span><input type="number" id="insp-radius" value="${data.radius || 30}" step="1"></label>
+      </div>
+      <div class="inspector-group"><h4>Description</h4>
+        <textarea id="insp-blurb" rows="3" placeholder="Area description...">${data.blurb || ''}</textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn-apply" id="insp-apply">Apply Changes</button>
+        <button class="btn-delete" id="insp-delete">Delete</button>
+      </div>`;
+    document.getElementById('insp-apply').onclick = () => applyAreaChanges(data);
+    document.getElementById('insp-delete').onclick = () => deleteObject('area', data.id);
+  }
+}
+
+// ─── Apply changes ──────────────────────────────────────────────────────────
+function applyBuildingChanges(data) {
+  data.label = document.getElementById('insp-label').value;
+  data.signText = document.getElementById('insp-signtext').value;
+  data.x = parseFloat(document.getElementById('insp-x').value);
+  data.z = parseFloat(document.getElementById('insp-z').value);
+  data.rotY = parseFloat(document.getElementById('insp-roty').value);
+  data.w = parseFloat(document.getElementById('insp-w').value);
+  data.h = parseFloat(document.getElementById('insp-h').value);
+  data.d = parseFloat(document.getElementById('insp-d').value);
+  data.wallColor = hexToOx(document.getElementById('insp-wallcolor').value);
+  data.roofColor = hexToOx(document.getElementById('insp-roofcolor').value);
+  if (!data.options) data.options = {};
+  data.options.enterable = document.getElementById('insp-enterable').checked;
+  data.options.solarPanels = document.getElementById('insp-solar').checked;
+
+  // Update mesh
+  const entry = buildingMeshes[data.id];
+  if (entry) {
+    const { body, roof } = entry;
+    // Recreate geometry for size changes
+    body.geometry.dispose();
+    body.geometry = new THREE.BoxGeometry(data.w, data.h, data.d);
+    const terrY = sampleTerrainAt(data.x, data.z);
+    body.material.color.setHex(parseColor(data.wallColor));
+    body.position.set(data.x, terrY + data.h / 2, data.z);
+    body.rotation.y = data.rotY;
+
+    roof.geometry.dispose();
+    roof.geometry = new THREE.ConeGeometry(Math.max(data.w, data.d) * 0.7, data.h * 0.4, 4);
+    roof.material.color.setHex(parseColor(data.roofColor));
+    roof.position.set(data.x, terrY + data.h + data.h * 0.2, data.z);
+    roof.rotation.y = data.rotY + Math.PI / 4;
+  }
+  markDirty();
+  statusBar.textContent = `Updated building: ${data.label || data.id}`;
+}
+
+function applyNPCChanges(data) {
+  data.name = document.getElementById('insp-name').value;
+  data.job = document.getElementById('insp-job').value;
+  data.color = hexToOx(document.getElementById('insp-color').value);
+  const sx = parseFloat(document.getElementById('insp-sx').value);
+  const sz = parseFloat(document.getElementById('insp-sz').value);
+  if (data.startX !== undefined) { data.startX = sx; data.startZ = sz; }
+  else { data.x = sx; data.z = sz; }
+  const dialogueText = document.getElementById('insp-dialogue').value;
+  data.dialogue = dialogueText.split('\n').filter(l => l.trim());
+
+  const mesh = npcMeshes[data.id];
+  if (mesh) {
+    mesh.material.color.setHex(parseColor(data.color));
+    mesh.position.set(sx, 2, sz);
+  }
+  markDirty();
+  statusBar.textContent = `Updated NPC: ${data.name || data.id}`;
+}
+
+function applyAreaChanges(data) {
+  data.label = document.getElementById('insp-label').value;
+  data.kind = document.getElementById('insp-kind').value;
+  data.x = parseFloat(document.getElementById('insp-x').value);
+  data.z = parseFloat(document.getElementById('insp-z').value);
+  data.radius = parseFloat(document.getElementById('insp-radius').value);
+  data.blurb = document.getElementById('insp-blurb').value;
+
+  const mesh = areaMeshes[data.id];
+  if (mesh) {
+    mesh.geometry.dispose();
+    mesh.geometry = new THREE.CircleGeometry(data.radius || 30, 32);
+    mesh.position.set(data.x, 0.15, data.z);
+  }
+  markDirty();
+  statusBar.textContent = `Updated area: ${data.label || data.id}`;
+}
+
+function deleteObject(type, id) {
+  if (!confirm(`Delete ${type} "${id}"?`)) return;
+  if (type === 'building') {
+    buildingsData = buildingsData.filter(b => b.id !== id);
+    const entry = buildingMeshes[id];
+    if (entry) { scene.remove(entry.body); scene.remove(entry.roof); delete buildingMeshes[id]; }
+  } else if (type === 'npc') {
+    npcsData = npcsData.filter(n => n.id !== id);
+    if (npcMeshes[id]) { scene.remove(npcMeshes[id]); delete npcMeshes[id]; }
+  } else if (type === 'area') {
+    areasData = areasData.filter(a => a.id !== id);
+    if (areaMeshes[id]) { scene.remove(areaMeshes[id]); delete areaMeshes[id]; }
+  }
+  clickableObjects = clickableObjects.filter(o => o.userData.id !== id);
+  deselectAll();
+  rebuildScene();
+  updateSceneTree();
+  markDirty();
+  statusBar.textContent = `Deleted ${type}: ${id}`;
+}
+
+// ─── Scene tree ─────────────────────────────────────────────────────────────
+function updateSceneTree() {
+  const tree = document.getElementById('scene-tree');
+  let html = '<h3>Scene</h3>';
+
+  html += `<div class="tree-section"><h4>Buildings (${buildingsData.length})</h4><div class="tree-items">`;
+  buildingsData.forEach(b => {
+    html += `<div class="tree-item" data-id="${b.id}" data-type="building">🏠 ${b.label || b.id}</div>`;
+  });
+  html += '</div></div>';
+
+  html += `<div class="tree-section"><h4>NPCs (${npcsData.length})</h4><div class="tree-items">`;
+  npcsData.forEach(n => {
+    html += `<div class="tree-item" data-id="${n.id}" data-type="npc">🧑 ${n.name || n.id}</div>`;
+  });
+  html += '</div></div>';
+
+  html += `<div class="tree-section"><h4>Areas (${areasData.length})</h4><div class="tree-items">`;
+  areasData.forEach(a => {
+    html += `<div class="tree-item" data-id="${a.id}" data-type="area">📍 ${a.label || a.id}</div>`;
+  });
+  html += '</div></div>';
+
+  html += `<div class="tree-section"><h4>Props (${PROPS.length})</h4><div class="tree-items">`;
+  PROPS.forEach(p => {
+    html += `<div class="tree-item" data-id="${p.id}" data-type="prop">${p.label}</div>`;
+  });
+  html += '</div></div>';
+
+  tree.innerHTML = html;
+
+  // Click handlers for tree items
+  tree.querySelectorAll('.tree-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      const type = el.dataset.type;
+      let mesh = null;
+      if (type === 'building') mesh = buildingMeshes[id]?.body;
+      else if (type === 'npc') mesh = npcMeshes[id];
+      else if (type === 'area') mesh = areaMeshes[id];
+      else if (type === 'prop') mesh = propMeshes[id];
+      if (mesh) {
+        if (type !== 'prop') selectObject(mesh);
+        focusCamera(mesh.position);
+        if (type === 'prop') highlightTreeItem(id);
+      }
+    });
+  });
+}
+
+function focusCamera(pos) {
+  orbitControls.target.set(pos.x, pos.y, pos.z);
+}
+
+// ─── Add new objects ────────────────────────────────────────────────────────
+function addBuilding() {
+  const id = `building_${Date.now()}`;
+  const newBuilding = {
+    id,
+    label: 'New Building',
+    x: 0, z: 0, rotY: 0,
+    w: 8, h: 4, d: 6,
+    wallColor: '0xc0a080',
+    roofColor: '0x8b4513',
+    signText: '',
+    options: { enterable: false, solarPanels: false }
+  };
+  buildingsData.push(newBuilding);
+  addBuildingMesh(newBuilding);
+  updateSceneTree();
+  markDirty();
+  selectObject(buildingMeshes[id].body);
+  statusBar.textContent = 'Added new building';
+}
+
+function addNPC() {
+  const id = `npc_${Date.now()}`;
+  const newNPC = {
+    id,
+    name: 'New NPC',
+    job: 'Villager',
+    color: '0xcccccc',
+    startX: 0, startZ: 0,
+    dialogue: []
+  };
+  npcsData.push(newNPC);
+  addNPCMesh(newNPC);
+  updateSceneTree();
+  markDirty();
+  selectObject(npcMeshes[id]);
+  statusBar.textContent = 'Added new NPC';
+}
+
+function addArea() {
+  const id = `area_${Date.now()}`;
+  const newArea = {
+    id,
+    label: 'New Area',
+    x: 0, z: 0,
+    radius: 30,
+    kind: 'civic',
+    blurb: ''
+  };
+  areasData.push(newArea);
+  addAreaMesh(newArea);
+  updateSceneTree();
+  markDirty();
+  selectObject(areaMeshes[id]);
+  statusBar.textContent = 'Added new area';
+}
+
+// ─── Save ───────────────────────────────────────────────────────────────────
+async function saveAll() {
+  // Guard: refuse to save if any core dataset is suspiciously empty (likely failed to load)
+  if (buildingsData.length === 0 || npcsData.length === 0) {
+    statusBar.textContent = 'Save blocked — data looks empty (reload the page)';
+    return;
+  }
+  statusBar.textContent = 'Saving...';
+  try {
+    const saves = [
+      { file: 'buildings', data: buildingsData },
+      { file: 'npcs', data: npcsData },
+      { file: 'areas', data: areasData },
+    ];
+    if (terrainDirty && terrainData) {
+      saves.push({ file: 'terrain', data: terrainData });
+    }
+    for (const s of saves) {
+      await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(s)
+      });
+    }
+    isDirty = false;
+    terrainDirty = false;
+    document.getElementById('btn-save').classList.remove('dirty');
+    statusBar.textContent = 'Saved ✓';
+  } catch (e) {
+    statusBar.textContent = 'Save failed: ' + e.message;
+  }
+}
+
+function markDirty() {
+  isDirty = true;
+  document.getElementById('btn-save').classList.add('dirty');
+}
+
+// ─── Interaction ────────────────────────────────────────────────────────────
+function getMouseNDC(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+}
+
+function getGroundHit(e) {
+  const ndc = getMouseNDC(e);
+  raycaster.setFromCamera(ndc, camera);
+  const target = new THREE.Vector3();
+  raycaster.ray.intersectPlane(dragPlane, target);
+  return target;
+}
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  mouseDownPos.set(e.clientX, e.clientY);
+  mouseMoved = false;
+
+  if (mode === 'move' && selectedObject) {
+    const ndc = getMouseNDC(e);
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects([selectedObject], false);
+    if (hits.length > 0) {
+      const hit = getGroundHit(e);
+      if (hit) {
+        isDraggingObject = true;
+        dragOffset.copy(selectedObject.position).sub(hit);
+        orbitControls.enabled = false;
+        e.preventDefault();
+      }
+    }
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  const dx = e.clientX - mouseDownPos.x;
+  const dy = e.clientY - mouseDownPos.y;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseMoved = true;
+
+  if (isDraggingObject && selectedObject) {
+    const hit = getGroundHit(e);
+    if (hit) {
+      const newPos = hit.clone().add(dragOffset);
+      selectedObject.position.x = newPos.x;
+      selectedObject.position.z = newPos.z;
+
+      const data = selectedObject.userData.data;
+      const rx = Math.round(newPos.x * 10) / 10;
+      const rz = Math.round(newPos.z * 10) / 10;
+
+      if (selectedObject.userData.type === 'building') {
+        data.x = rx; data.z = rz;
+        // Snap building + roof to terrain height as we drag
+        const terrY = sampleTerrainAt(rx, rz);
+        const bh = data.h || 4;
+        selectedObject.position.y = terrY + bh / 2;
+        const entry = buildingMeshes[data.id];
+        if (entry) {
+          entry.roof.position.x = rx;
+          entry.roof.position.y = terrY + bh + bh * 0.2;
+          entry.roof.position.z = rz;
+        }
+      } else if (selectedObject.userData.type === 'npc') {
+        if (data.startX !== undefined) { data.startX = rx; data.startZ = rz; }
+        else { data.x = rx; data.z = rz; }
+      } else if (selectedObject.userData.type === 'area') {
+        data.x = rx; data.z = rz;
+      }
+
+      // Update inspector if visible
+      const xInput = document.getElementById('insp-x') || document.getElementById('insp-sx');
+      const zInput = document.getElementById('insp-z') || document.getElementById('insp-sz');
+      if (xInput) xInput.value = rx;
+      if (zInput) zInput.value = rz;
+
+      // Move label with object (also update Y for buildings on terrain)
+      const lbl = objectLabels[data.id];
+      if (lbl) {
+        lbl.position.x = rx;
+        lbl.position.z = rz;
+        if (selectedObject.userData.type === 'building') {
+          const bh2 = data.h || 4;
+          lbl.position.y = sampleTerrainAt(rx, rz) + bh2 + bh2 * 0.4 + 2;
+        }
+      }
+
+      if (selectionHelper) selectionHelper.update();
+      markDirty();
+    }
+  }
+});
+
+renderer.domElement.addEventListener('mouseup', (e) => {
+  if (isDraggingObject) {
+    isDraggingObject = false;
+    orbitControls.enabled = true;
+    return;
+  }
+
+  if (e.button !== 0 || mouseMoved) return;
+
+  // Click to select
+  const ndc = getMouseNDC(e);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(clickableObjects, false);
+  if (hits.length > 0) {
+    selectObject(hits[0].object);
+  } else {
+    deselectAll();
+  }
+});
+
+// ─── Toolbar ────────────────────────────────────────────────────────────────
+document.getElementById('btn-move').addEventListener('click', () => {
+  mode = 'move';
+  document.getElementById('btn-move').classList.add('active');
+  document.getElementById('btn-view').classList.remove('active');
+});
+document.getElementById('btn-view').addEventListener('click', () => {
+  mode = 'view';
+  document.getElementById('btn-view').classList.add('active');
+  document.getElementById('btn-move').classList.remove('active');
+});
+document.getElementById('btn-add-building').addEventListener('click', addBuilding);
+document.getElementById('btn-add-npc').addEventListener('click', addNPC);
+document.getElementById('btn-add-area').addEventListener('click', addArea);
+document.getElementById('btn-save').addEventListener('click', saveAll);
+
+// Keyboard shortcut: Ctrl+S to save
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveAll();
+  }
+  if (e.key === 'Delete' && selectedObject) {
+    deleteObject(selectedObject.userData.type, selectedObject.userData.id);
+  }
+  if (e.key === 'Escape') {
+    if (editorMode === 'terrain') {
+      exitTerrainMode();
+    } else {
+      deselectAll();
+    }
+  }
+});
+
+// ─── Terrain Editor ──────────────────────────────────────────────────────────
+let terrainData = null;
+let terrainDirty = false;
+let editorMode = 'scene'; // 'scene' | 'terrain'
+let activeTool = 'raise';
+let brushSize = 5;
+let brushStrength = 5;
+let isPainting = false;
+
+const terrainCanvas = document.getElementById('terrain-canvas');
+terrainCanvas.width = 640;
+terrainCanvas.height = 640;
+terrainCanvas.style.cssText = 'cursor:crosshair;border:1px solid #0f3460;';
+
+// Tool buttons
+document.querySelectorAll('#terrain-tools .tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#terrain-tools .tool-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTool = btn.dataset.tool;
+  });
+});
+
+// Sliders
+document.getElementById('brush-size').addEventListener('input', (e) => {
+  brushSize = parseInt(e.target.value);
+  document.getElementById('brush-size-val').textContent = brushSize;
+});
+document.getElementById('brush-strength').addEventListener('input', (e) => {
+  brushStrength = parseInt(e.target.value);
+  document.getElementById('brush-strength-val').textContent = brushStrength;
+});
+
+function heightToColor(h, maxH) {
+  if (h <= 0) return '#1a6fa8';
+  const t = Math.min(1, h / maxH);
+  if (t < 0.15) return '#c8b878';
+  if (t < 0.3)  return '#7ab548';
+  if (t < 0.55) return '#5a9430';
+  if (t < 0.75) return '#8b7355';
+  return '#c8c8c8';
+}
+
+function renderTerrainCanvas() {
+  if (!terrainData) return;
+  const { grid, data } = terrainData;
+  const ctx = terrainCanvas.getContext('2d');
+  const W = terrainCanvas.width, H = terrainCanvas.height;
+  const cellW = W / grid, cellH = H / grid;
+  const maxH = 25;
+
+  for (let j = 0; j < grid; j++) {
+    for (let i = 0; i < grid; i++) {
+      const h = data[j * grid + i];
+      ctx.fillStyle = heightToColor(h, maxH);
+      ctx.fillRect(i * cellW, j * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    }
+  }
+
+  // Overlay buildings
+  const worldSize = terrainData.worldSize || 600;
+  const wsHalf = worldSize / 2;
+  buildingsData.forEach(b => {
+    const px = (b.x + wsHalf) / worldSize * W;
+    const py = (b.z + wsHalf) / worldSize * H;
+    ctx.fillStyle = 'rgba(255,200,0,0.7)';
+    ctx.fillRect(px - 3, py - 3, 6, 6);
+  });
+}
+
+function applyBrush(cx, cz) {
+  const grid = terrainData.grid;
+  const radius = brushSize;
+  const strength = brushStrength * 0.3;
+
+  for (let j = Math.floor(cz - radius); j <= Math.ceil(cz + radius); j++) {
+    for (let i = Math.floor(cx - radius); i <= Math.ceil(cx + radius); i++) {
+      if (i < 0 || i >= grid || j < 0 || j >= grid) continue;
+      const dist = Math.sqrt((i - cx) ** 2 + (j - cz) ** 2);
+      if (dist > radius) continue;
+
+      const influence = (1 - dist / radius) ** 2;
+      const idx = j * grid + i;
+
+      const PAINT_TARGETS = { 'paint-sea': 0, 'paint-beach': 1.5, 'paint-grass': 6, 'paint-hills': 18 };
+      switch (activeTool) {
+        case 'raise':
+          terrainData.data[idx] = Math.min(30, terrainData.data[idx] + strength * influence);
+          break;
+        case 'lower':
+          terrainData.data[idx] = Math.max(0, terrainData.data[idx] - strength * influence);
+          break;
+        case 'flatten': {
+          const target = 2.0;
+          terrainData.data[idx] += (target - terrainData.data[idx]) * influence * 0.3;
+          break;
+        }
+        case 'smooth': {
+          let sum = 0, count = 0;
+          for (let dj = -1; dj <= 1; dj++) {
+            for (let di = -1; di <= 1; di++) {
+              const ni = i + di, nj = j + dj;
+              if (ni >= 0 && ni < grid && nj >= 0 && nj < grid) {
+                sum += terrainData.data[nj * grid + ni];
+                count++;
+              }
+            }
+          }
+          const avg = sum / count;
+          terrainData.data[idx] += (avg - terrainData.data[idx]) * influence * 0.4;
+          break;
+        }
+        default: {
+          // Terrain-type paint tools — blend toward target height
+          const target = PAINT_TARGETS[activeTool];
+          if (target !== undefined) {
+            terrainData.data[idx] += (target - terrainData.data[idx]) * Math.min(1, influence * 0.6);
+          }
+        }
+      }
+    }
+  }
+}
+
+// ─── Terrain canvas zoom + pan ───────────────────────────────────────────────
+let terrainScale = 1, terrainTX = 0, terrainTY = 0;
+let isPanning = false, panLastX = 0, panLastY = 0;
+
+function applyTerrainViewTransform() {
+  terrainCanvas.style.transformOrigin = '0 0';
+  terrainCanvas.style.transform = `translate(${terrainTX}px, ${terrainTY}px) scale(${terrainScale})`;
+}
+
+function resetTerrainView() {
+  terrainScale = 1; terrainTX = 0; terrainTY = 0;
+  applyTerrainViewTransform();
+}
+
+const terrainWrap = terrainCanvas.parentElement;
+
+terrainWrap.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const wRect = terrainWrap.getBoundingClientRect();
+  const cx = e.clientX - wRect.left;
+  const cy = e.clientY - wRect.top;
+  const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+  const newScale = Math.max(0.5, Math.min(12, terrainScale * factor));
+  terrainTX = cx - (cx - terrainTX) * (newScale / terrainScale);
+  terrainTY = cy - (cy - terrainTY) * (newScale / terrainScale);
+  terrainScale = newScale;
+  applyTerrainViewTransform();
+}, { passive: false });
+
+terrainCanvas.addEventListener('mousedown', (e) => {
+  if (e.button === 1 || e.button === 2) {
+    isPanning = true; panLastX = e.clientX; panLastY = e.clientY;
+    e.preventDefault();
+  }
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isPanning) return;
+  terrainTX += e.clientX - panLastX;
+  terrainTY += e.clientY - panLastY;
+  panLastX = e.clientX; panLastY = e.clientY;
+  applyTerrainViewTransform();
+});
+window.addEventListener('mouseup', (e) => { if (e.button === 1 || e.button === 2) isPanning = false; });
+terrainCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// Double-click wrapper to reset view
+terrainWrap.addEventListener('dblclick', (e) => {
+  if (e.target !== terrainCanvas) resetTerrainView();
+});
+
+// ─── Brush cursor ─────────────────────────────────────────────────────────────
+const brushCursor = document.getElementById('brush-cursor');
+function updateBrushCursor(e) {
+  if (!terrainData) return;
+  const wRect = terrainWrap.getBoundingClientRect();
+  const x = e.clientX - wRect.left;
+  const y = e.clientY - wRect.top;
+  // Each grid cell = (canvas natural width / grid) * current zoom scale
+  const pxPerCell = (terrainCanvas.width / terrainData.grid) * terrainScale;
+  const diameter = brushSize * 2 * pxPerCell;
+  brushCursor.style.left = x + 'px';
+  brushCursor.style.top = y + 'px';
+  brushCursor.style.width = diameter + 'px';
+  brushCursor.style.height = diameter + 'px';
+  brushCursor.style.display = 'block';
+}
+terrainCanvas.addEventListener('mousemove', updateBrushCursor);
+terrainCanvas.addEventListener('mouseenter', updateBrushCursor);
+
+// Canvas mouse events
+terrainCanvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  isPainting = true;
+  paintAt(e);
+});
+
+terrainCanvas.addEventListener('mousemove', (e) => {
+  // Update cursor height display
+  const rect = terrainCanvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) / rect.width;
+  const my = (e.clientY - rect.top) / rect.height;
+  if (terrainData) {
+    const grid = terrainData.grid;
+    const i = Math.round(mx * (grid - 1));
+    const j = Math.round(my * (grid - 1));
+    if (i >= 0 && i < grid && j >= 0 && j < grid) {
+      const h = terrainData.data[j * grid + i];
+      const _wsDisp = terrainData.worldSize || 600;
+      const wx = Math.round(-_wsDisp/2 + mx * _wsDisp);
+      const wz = Math.round(-_wsDisp/2 + my * _wsDisp);
+      document.getElementById('cursor-height').textContent = `(${wx}, ${wz}) → ${h.toFixed(1)}m`;
+    }
+  }
+
+  if (!isPainting) return;
+  paintAt(e);
+});
+
+terrainCanvas.addEventListener('mouseup', () => { isPainting = false; });
+terrainCanvas.addEventListener('mouseleave', () => { isPainting = false; brushCursor.style.display = 'none'; });
+
+let _terrain3DUpdateTimer = null;
+function paintAt(e) {
+  if (!terrainData) return;
+  const rect = terrainCanvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) / rect.width;
+  const my = (e.clientY - rect.top) / rect.height;
+  const grid = terrainData.grid;
+  const gx = mx * (grid - 1);
+  const gz = my * (grid - 1);
+
+  applyBrush(gx, gz);
+  renderTerrainCanvas();
+  terrainDirty = true;
+  markDirty();
+
+  // Throttle 3D mesh update to ~10fps while painting
+  if (!_terrain3DUpdateTimer) {
+    _terrain3DUpdateTimer = setTimeout(() => {
+      updateTerrainMesh3D();
+      _terrain3DUpdateTimer = null;
+    }, 100);
+  }
+}
+
+// Enter terrain mode
+document.getElementById('btn-terrain').addEventListener('click', () => {
+  editorMode = 'terrain';
+  document.getElementById('btn-terrain').classList.add('active');
+  document.getElementById('viewport').style.display = 'none';
+  document.getElementById('scene-tree').style.display = 'none';
+  document.getElementById('inspector').style.display = 'none';
+  document.getElementById('terrain-view').style.display = 'flex';
+
+  if (!terrainData) {
+    fetch('/data/terrain.json').then(r => r.json()).then(d => {
+      terrainData = d;
+      renderTerrainCanvas();
+      statusBar.textContent = `Terrain mode — ${d.grid}×${d.grid} grid`;
+    }).catch(() => {
+      statusBar.textContent = 'Failed to load terrain data';
+    });
+  } else {
+    renderTerrainCanvas();
+    statusBar.textContent = `Terrain mode — ${terrainData.grid}×${terrainData.grid} grid`;
+  }
+});
+
+function exitTerrainMode() {
+  editorMode = 'scene';
+  document.getElementById('btn-terrain').classList.remove('active');
+  document.getElementById('viewport').style.display = '';
+  document.getElementById('scene-tree').style.display = '';
+  document.getElementById('inspector').style.display = '';
+  document.getElementById('terrain-view').style.display = 'none';
+  if (terrainDirty) updateTerrainMesh3D(); // sync 3D mesh with any paint changes
+  statusBar.textContent = `Ready — ${buildingsData.length} buildings, ${npcsData.length} NPCs, ${areasData.length} areas`;
+}
+
+// Clicking any non-terrain toolbar button exits terrain mode
+['btn-move', 'btn-view', 'btn-add-building', 'btn-add-npc', 'btn-add-area'].forEach(id => {
+  document.getElementById(id).addEventListener('click', () => {
+    if (editorMode === 'terrain') exitTerrainMode();
+  });
+});
+
+// Resize terrain
+document.getElementById('btn-resize-terrain').addEventListener('click', () => {
+  if (!terrainData) return;
+  const newGrid = parseInt(document.getElementById('terrain-grid-select').value);
+  if (newGrid === terrainData.grid) {
+    statusBar.textContent = `Already at ${newGrid}×${newGrid}`;
+    return;
+  }
+  if (!confirm(`Resize terrain from ${terrainData.grid}×${terrainData.grid} to ${newGrid}×${newGrid}? Existing terrain will be resampled.`)) return;
+  const newData = resampleTerrain(terrainData.data, terrainData.grid, newGrid);
+  terrainData = { grid: newGrid, worldSize: terrainData.worldSize || 600, data: newData };
+  buildTerrainMesh3D(terrainData);
+  renderTerrainCanvas();
+  terrainDirty = true;
+  markDirty();
+  statusBar.textContent = `Terrain resized to ${newGrid}×${newGrid} — hit Save All to keep`;
+});
+
+// Apply new island world size
+document.getElementById('btn-resize-worldsize').addEventListener('click', () => {
+  if (!terrainData) return;
+  const newWS = parseInt(document.getElementById('terrain-worldsize-select').value);
+  const curWS = terrainData.worldSize || 600;
+  if (newWS === curWS) {
+    statusBar.textContent = `Island size already ${curWS} units`;
+    return;
+  }
+  if (!confirm(`Change island size from ${curWS} to ${newWS} world units?\nThe terrain shape is preserved — only the physical scale changes.\nSave All to apply in-game.`)) return;
+  terrainData = { ...terrainData, worldSize: newWS };
+  buildTerrainMesh3D(terrainData);
+  renderTerrainCanvas();
+  terrainDirty = true;
+  markDirty();
+  statusBar.textContent = `Island size set to ${newWS} — hit Save All to keep`;
+});
+
+// Reset terrain
+document.getElementById('btn-reset-terrain').addEventListener('click', async () => {
+  if (!confirm('Reset terrain to last saved version?')) return;
+  try {
+    terrainData = await fetch('/data/terrain.json').then(r => r.json());
+    terrainDirty = false;
+    renderTerrainCanvas();
+    statusBar.textContent = 'Terrain reset to saved version';
+  } catch (e) {
+    statusBar.textContent = 'Reset failed: ' + e.message;
+  }
+});
+
+// ─── Resize ─────────────────────────────────────────────────────────────────
+function onResize() {
+  const rect = viewportEl.getBoundingClientRect();
+  camera.aspect = rect.width / rect.height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(rect.width, rect.height);
+  labelRenderer.setSize(rect.width, rect.height);
+}
+window.addEventListener('resize', onResize);
+
+// ─── Animation loop ─────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  orbitControls.update();
+  if (selectionHelper) selectionHelper.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+
+animate();
+init();
+</script>
+</body>
+</html>

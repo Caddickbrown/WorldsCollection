@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Island — Atlas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-display: 'Instrument Serif', Georgia, serif;
+      --font-body:    'Work Sans', system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+      --accent:       #c26e4c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+
+    /* ── Root layout ────────────────────────────────────────────────────── */
+    .atlas-root {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 24px;
+      width: 100%; height: 100%;
+      padding: 24px;
+      background:
+        radial-gradient(ellipse at 20% 10%, #f5e8c2 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 90%, #eed8a4 0%, transparent 60%),
+        linear-gradient(160deg, #f0dfb4 0%, #e4cb93 100%);
+      color: #3a2610;
+      font-family: var(--font-body);
+    }
+
+    /* ── Map frame ──────────────────────────────────────────────────────── */
+    .atlas-map-wrap {
+      min-width: 0; min-height: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .atlas-frame {
+      position: relative;
+      width: 100%; height: 100%;
+      background: #f6e7be;
+      border: 1px solid #8a6a3a;
+      box-shadow:
+        inset 0 0 0 8px  #f0dfb4,
+        inset 0 0 0 9px  #8a6a3a,
+        0 20px 40px -20px rgba(74,50,20,0.4);
+      padding: 16px;
+      border-radius: 2px;
+    }
+    .atlas-frame::before {
+      content: '';
+      position: absolute; inset: 0;
+      background:
+        repeating-linear-gradient(92deg,  transparent 0 3px, rgba(74,50,20,0.025) 3px 4px),
+        repeating-linear-gradient(178deg, transparent 0 5px, rgba(74,50,20,0.02)  5px 6px);
+      pointer-events: none;
+      border-radius: 2px;
+    }
+    .atlas-frame__rivets { position: absolute; inset: 4px; pointer-events: none; }
+    .atlas-frame__rivets span {
+      position: absolute;
+      width: 10px; height: 10px;
+      background: radial-gradient(circle at 35% 35%, #d4a853, #8a6a3a 70%, #4a321a 100%);
+      border-radius: 50%;
+      box-shadow: inset 0 -1px 2px rgba(0,0,0,0.4), 0 1px 1px rgba(0,0,0,0.2);
+    }
+    .atlas-frame__rivets span:nth-child(1) { top: 2px; left: 2px; }
+    .atlas-frame__rivets span:nth-child(2) { top: 2px; right: 2px; }
+    .atlas-frame__rivets span:nth-child(3) { bottom: 2px; left: 2px; }
+    .atlas-frame__rivets span:nth-child(4) { bottom: 2px; right: 2px; }
+
+    /* ── Side panel ─────────────────────────────────────────────────────── */
+    .atlas-side {
+      display: flex; flex-direction: column; gap: 16px;
+      min-height: 0; overflow: hidden;
+    }
+
+    .atlas-meta {
+      flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 14px 16px;
+      background: rgba(255,244,217,0.6);
+      border: 1px solid rgba(138,106,58,0.4);
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 11px; letter-spacing: 0.05em;
+      color: #6b4a22;
+    }
+    .atlas-meta__row { display: flex; justify-content: space-between; align-items: center; }
+    .atlas-meta__label { opacity: 0.7; text-transform: uppercase; letter-spacing: 0.1em; }
+    .atlas-meta__val   { color: #3a2610; font-weight: 500; }
+
+    .atlas-card {
+      flex-shrink: 0;
+      padding: 22px 22px 18px;
+      background: #faf2dd;
+      border: 1px solid #8a6a3a;
+      border-radius: 3px;
+      box-shadow: 0 8px 24px -12px rgba(74,50,20,0.25);
+      position: relative;
+    }
+    .atlas-card::after {
+      content: '';
+      position: absolute; top: 6px; left: 6px; right: 6px; bottom: 6px;
+      border: 0.5px solid rgba(138,106,58,0.35);
+      pointer-events: none; border-radius: 2px;
+    }
+    .atlas-card__kicker {
+      font-family: var(--font-mono);
+      font-size: 10px; color: #8a6a3a;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .atlas-card__title {
+      font-family: var(--font-display);
+      font-style: italic; font-weight: 400;
+      font-size: 32px; line-height: 1.05;
+      margin: 0 0 10px; color: #2d1d0a;
+    }
+    .atlas-card__blurb {
+      font-size: 13px; line-height: 1.55;
+      color: #5a3e1e; margin: 0 0 16px;
+    }
+    .atlas-card__subhead {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-family: var(--font-mono);
+      font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #8a6a3a;
+      padding-bottom: 6px;
+      border-bottom: 0.5px dashed rgba(138,106,58,0.5);
+      margin-bottom: 10px;
+    }
+    .atlas-card__count {
+      font-family: var(--font-display);
+      font-style: italic; font-size: 18px;
+      color: var(--accent); text-transform: none; letter-spacing: 0;
+    }
+    .atlas-empty {
+      font-family: var(--font-display);
+      font-style: italic; color: #8a6a3a; font-size: 14px; padding: 8px 0;
+    }
+    .atlas-here {
+      list-style: none; margin: 0; padding: 0;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .atlas-here li { display: flex; gap: 10px; align-items: flex-start; }
+    .atlas-here__dot {
+      flex: none; width: 14px; height: 14px;
+      border-radius: 50%; border: 1px solid #3a2610; margin-top: 3px;
+    }
+    .atlas-here__body { flex: 1; min-width: 0; }
+    .atlas-here__name { font-size: 13px; color: #2d1d0a; font-weight: 500; }
+    .atlas-here__name em {
+      font-family: var(--font-display); font-style: italic;
+      font-weight: 400; color: #6b4a22;
+    }
+    .atlas-here__act {
+      font-size: 11px; color: #8a6a3a;
+      font-family: var(--font-mono); margin-top: 1px;
+    }
+
+    .atlas-roster {
+      flex: 1; min-height: 0; overflow: auto;
+      background: rgba(255,244,217,0.55);
+      border: 1px solid rgba(138,106,58,0.35);
+      border-radius: 3px;
+      padding: 14px 14px 12px;
+    }
+    .atlas-roster__head {
+      font-family: var(--font-mono);
+      font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #8a6a3a; margin-bottom: 10px;
+    }
+    .atlas-roster__grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+    }
+    .atlas-roster__chip {
+      all: unset; cursor: pointer;
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      grid-template-rows: auto auto;
+      column-gap: 7px; row-gap: 1px;
+      padding: 6px 8px;
+      background: rgba(250,242,221,0.6);
+      border: 0.5px solid rgba(138,106,58,0.3);
+      border-radius: 2px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .atlas-roster__chip:hover { background: #faf2dd; border-color: #8a6a3a; }
+    .atlas-roster__dot {
+      grid-row: 1 / 3; align-self: center;
+      width: 10px; height: 10px;
+      border-radius: 50%; border: 0.5px solid #3a2610;
+    }
+    .atlas-roster__name { font-size: 12px; color: #2d1d0a; font-weight: 500; }
+    .atlas-roster__act  { font-size: 10px; font-family: var(--font-mono); color: #8a6a3a; }
+
+    /* ── Area glyphs (SVG) ──────────────────────────────────────────────── */
+    .area-glyph { cursor: pointer; }
+
+    /* ── Back link ──────────────────────────────────────────────────────── */
+    .back-link {
+      position: fixed; bottom: 14px; right: 16px; z-index: 10;
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+      color: #8a6a3a; text-decoration: none; text-transform: uppercase;
+      background: rgba(250,242,221,0.88); padding: 5px 10px;
+      border-radius: 2px; border: 0.5px solid rgba(138,106,58,0.45);
+      opacity: 0.75; transition: opacity 0.15s;
+    }
+    .back-link:hover { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<a class="back-link" href="index.html">← back to island</a>
+
+<div class="atlas-root">
+  <div class="atlas-map-wrap">
+    <div class="atlas-frame">
+      <div class="atlas-frame__rivets">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <svg id="map-svg" viewBox="-310 -310 620 620"
+           style="width:100%;height:100%;display:block"></svg>
+    </div>
+  </div>
+  <div class="atlas-side" id="side-panel"></div>
+</div>
+
+<script>
+// ── World data ───────────────────────────────────────────────────────────────
+
+const AREAS = [
+  { id: 'townSquare', name: 'Town Square',       x:    0, z:    0,   kind: 'civic', blurb: 'The beating heart of the island. Festivals, market days, the sound of the fountain at dusk.' },
+  { id: 'bakery',     name: 'The Bakery',         x:  -60, z:  -40,  kind: 'craft', blurb: "Rosa's ovens fire before dawn. The air smells of cardamom buns and fresh rye." },
+  { id: 'postOffice', name: 'Post Office',        x:   60, z:  -40,  kind: 'civic', blurb: "Letters, parcels, rumour. Theo knows every doorway by heart." },
+  { id: 'cafe',       name: 'The Café',           x:    5, z:  -55,  kind: 'craft', blurb: "Nico pours the island's coffee. The terrace catches the afternoon sun." },
+  { id: 'pub',        name: 'The Anchor',         x:  -30, z:  -70,  kind: 'civic', blurb: "Barney's pub. A fire in the hearth, a pint on the house if you arrive wet." },
+  { id: 'school',     name: 'The Schoolhouse',    x:   40, z:  -70,  kind: 'civic', blurb: "Clara teaches numbers; Rex teaches the river. The bell rings at nine." },
+  { id: 'library',    name: 'The Library',        x:   80, z:   40,  kind: 'civic', blurb: "Marta's kingdom of indexed stories. Armchairs deep enough to vanish into." },
+  { id: 'workshop',   name: 'The Workshop',       x:  -80, z:   40,  kind: 'craft', blurb: "Otto's garage. Solder, sawdust, the half-rebuilt truck that may yet run." },
+  { id: 'farm',       name: 'The Farm',           x: -180, z:   80,  kind: 'rural', blurb: "Eddy and Pete work the terraces. Hens, bees, a windmill that never quite sleeps." },
+  { id: 'forestPath', name: 'Forest Path',        x:  180, z:  120,  kind: 'wild',  blurb: "Old growth. Moss, woodpeckers, a trail that seems longer than the map admits." },
+  { id: 'aquarium',   name: "Elliot's Aquarium",  x:  150, z:  -80,  kind: 'civic', blurb: "Fifteen fish in quiet blue light. Elliot hums while he feeds them." },
+  { id: 'clifftops',  name: 'The Clifftops',      x: -100, z: -180,  kind: 'wild',  blurb: "The island's highest point. Wind. The whole town laid out like a pressed leaf." },
+  { id: 'southBeach', name: 'South Beach',        x:    0, z: -220,  kind: 'shore', blurb: "Pale sand, flat water at low tide. Someone's always left a bucket here." },
+  { id: 'beach',      name: 'East Beach',         x:   30, z: -200,  kind: 'shore', blurb: "Rockier, tidal pools, the fishing nets mended in long slow afternoons." },
+  { id: 'dock',       name: 'The Dock',           x:    0, z:  262,  kind: 'shore', blurb: "Salt-grey planks, Suki's boat, the only way on or off the island." },
+  { id: 'lighthouse', name: 'The Lighthouse',     x:   42, z:  248,  kind: 'shore', blurb: "Lena's domain. The light sweeps through fog and counts out the hours." },
+  { id: 'treehouse',  name: 'The Treehouse',      x:  188, z:  128,  kind: 'wild',  blurb: "Eddy's evening retreat. High in the canopy, above the ordinary world." },
+];
+
+const NPCS = [
+  { id: 'rosa',    name: 'Rosa',     role: 'Baker',             accent: '#e8a87c', noonArea: 'bakery',     noonAct: 'Selling bread' },
+  { id: 'theo',    name: 'Theo',     role: 'Postman',           accent: '#5b9bd5', noonArea: 'farm',       noonAct: 'Delivering' },
+  { id: 'eddy',    name: 'Eddy',     role: 'Farmer',            accent: '#7bc67e', noonArea: 'farm',       noonAct: 'Farming' },
+  { id: 'olive',   name: 'Olive',    role: 'Shopkeeper',        accent: '#d4a0d4', noonArea: 'townSquare', noonAct: 'Tending shop' },
+  { id: 'marta',   name: 'Marta',    role: 'Librarian',         accent: '#a29bfe', noonArea: 'library',    noonAct: 'Keeping the library' },
+  { id: 'suki',    name: 'Suki',     role: 'Fisherman',         accent: '#c47d52', noonArea: 'townSquare', noonAct: 'Selling catch' },
+  { id: 'pete',    name: 'Pete',     role: 'Farmer',            accent: '#8db87a', noonArea: 'townSquare', noonAct: 'Selling produce' },
+  { id: 'barney',  name: 'Barney',   role: 'Barkeep',           accent: '#d4a853', noonArea: 'pub',        noonAct: 'Preparing lunch' },
+  { id: 'nico',    name: 'Nico',     role: 'Barista',           accent: '#f4c77e', noonArea: 'cafe',       noonAct: 'Making coffee' },
+  { id: 'clara',   name: 'Clara',    role: 'Teacher',           accent: '#74b9e8', noonArea: 'school',     noonAct: 'Teaching' },
+  { id: 'rex',     name: 'Rex',      role: 'Teacher',           accent: '#6ec97b', noonArea: 'school',     noonAct: 'Teaching' },
+  { id: 'otto',    name: 'Otto',     role: 'Engineer',          accent: '#e17055', noonArea: 'workshop',   noonAct: 'Welding' },
+  { id: 'oldwill', name: 'Old Will', role: 'Elder',             accent: '#b8a898', noonArea: 'pub',        noonAct: 'Lunchtime pint' },
+  { id: 'lena',    name: 'Lena',     role: 'Lighthouse keeper', accent: '#8aaec8', noonArea: 'lighthouse', noonAct: 'Keeping the light' },
+  { id: 'bea',     name: 'Bea',      role: 'Island child',      accent: '#ffa07a', noonArea: 'beach',      noonAct: 'Collecting things' },
+];
+
+const KIND_LABELS = { civic: 'Civic', craft: 'Craft', rural: 'Rural', wild: 'Wild', shore: 'Shore' };
+const ACCENT = '#c26e4c';
+
+// ── NPC Schedules (CAD-438) ─────────────────────────────────────────────────
+// Each entry: [startHour, endHour, areaId, activity]
+// areaIds map to the AREAS array above by id field
+const NPC_SCHEDULES = {
+  rosa:    [[5,8,'bakery','Baking'],[8,12,'bakery','Selling bread'],[12,14,'beach','On break'],[14,18,'bakery','Baking'],[18,21,'library','Reading'],[21,5,'bakery','Sleeping']],
+  theo:    [[6,7,'postOffice','Sorting mail'],[7,9,'townSquare','Delivering'],[9,11,'library','Delivering'],[11,13,'farm','Delivering'],[13,14,'dock','Lunch break'],[14,16,'workshop','Delivering'],[16,18,'postOffice','Back at base'],[18,22,'bakery','Off-duty'],[22,6,'postOffice','Sleeping']],
+  eddy:    [[4,12,'farm','Farming'],[12,13,'townSquare','Farmers market'],[13,15,'workshop','Building'],[15,18,'farm','Farming'],[18,20,'southBeach','Evening walk'],[20,4,'farm','Sleeping']],
+  olive:   [[8,13,'townSquare','Minding the store'],[13,14,'cafe','Lunch break'],[14,18,'townSquare','Tending shop'],[18,20,'clifftops','Evening walk'],[20,23,'library','Reading'],[23,8,'townSquare','Sleeping']],
+  marta:   [[9,19,'library','Keeping the library'],[19,21,'forestPath','Evening walk'],[21,9,'library','Sleeping']],
+  suki:    [[5,8,'cafe','Opening up'],[8,14,'cafe','Making coffee'],[14,15,'townSquare','Lunch break'],[15,19,'cafe','Afternoon rush'],[19,21,'library','Reading'],[21,5,'cafe','Sleeping']],
+  pete:    [[4,7,'farm','Tending animals'],[7,12,'farm','Working the fields'],[12,13,'townSquare','Selling produce'],[13,16,'farm','Harvesting'],[16,19,'workshop','Fixing tools'],[19,21,'pub','Unwinding'],[21,4,'farm','Sleeping']],
+  barney:  [[10,14,'pub','Preparing'],[14,23,'pub','Running The Anchor'],[23,1,'pub','Closing up'],[1,10,'pub','Sleeping']],
+  nico:    [[5,8,'cafe','Opening up'],[8,14,'cafe','Making coffee'],[14,15,'townSquare','Lunch break'],[15,19,'cafe','Afternoon rush'],[19,21,'library','Reading'],[21,5,'cafe','Sleeping']],
+  clara:   [[7,9,'cafe','Morning coffee'],[9,15,'school','Teaching'],[15,18,'library','Marking work'],[18,20,'townSquare','Evening stroll'],[20,7,'school','Sleeping']],
+  rex:     [[8,9,'townSquare','Morning walk'],[9,15,'school','Teaching'],[15,17,'workshop','Woodwork club'],[17,20,'pub','After-school pint'],[20,8,'school','Sleeping']],
+  otto:    [[6,7,'workshop','Early start'],[7,12,'workshop','Working on the truck'],[12,13,'townSquare','Lunch break'],[13,18,'workshop','Welding'],[18,20,'pub','Evening pint'],[20,6,'workshop','Sleeping']],
+  oldwill: [[7,9,'clifftops','Morning watch'],[9,11,'townSquare','Morning stroll'],[11,13,'pub','Long lunch'],[13,17,'clifftops','Whittling'],[17,19,'beach','Watching the tide'],[19,7,'clifftops','Sleeping']],
+  lena:    [[5,8,'lighthouse','Tending the light'],[8,12,'dock','Watching ships'],[12,13,'cafe','Quick lunch'],[13,17,'lighthouse','Maintenance work'],[17,19,'southBeach','Evening walk'],[19,5,'lighthouse','Sleeping']],
+  bea:     [[8,9,'townSquare','Breakfast'],[9,12,'school','At school'],[12,13,'townSquare','Playing'],[13,15,'school','Afternoon class'],[15,18,'forestPath','Adventure play'],[18,20,'townSquare','Running around'],[20,8,'townSquare','Sleeping']],
+};
+
+function getScheduleEntry(npcId, hour) {
+  const schedule = NPC_SCHEDULES[npcId];
+  if (!schedule) return null;
+  for (const [start, end, areaId, activity] of schedule) {
+    if (start < end) {
+      if (hour >= start && hour < end) return { areaId, activity };
+    } else {
+      if (hour >= start || hour < end) return { areaId, activity };
+    }
+  }
+  return { areaId: schedule[0][2], activity: schedule[0][3] };
+}
+
+// Simulated game time: 1 real second = 10 sim minutes, starting at 8am
+let simTimeAccum = 0;
+const SIM_SPEED = 10;
+const SIM_START_HOUR = 8;
+let lastTimestamp = null;
+
+function getSimHour() {
+  return (SIM_START_HOUR + simTimeAccum) % 24;
+}
+
+function advanceSimTime(now) {
+  if (lastTimestamp !== null) {
+    const deltaSec = (now - lastTimestamp) / 1000;
+    simTimeAccum += (deltaSec * SIM_SPEED) / 60;
+  }
+  lastTimestamp = now;
+}
+
+function getNpcPosition(npc, i) {
+  const hour = getSimHour();
+  const entry = getScheduleEntry(npc.id, hour);
+  const areaId = entry ? entry.areaId : npc.noonArea;
+  const area = AREAS.find(a => a.id === areaId) || AREAS.find(a => a.id === npc.noonArea) || AREAS[0];
+  const ang = (i * 2.399) % (Math.PI * 2);
+  const r = 10 + (i % 4) * 3;
+  return { x: area.x + Math.cos(ang) * r, z: area.z + Math.sin(ang) * r };
+}
+
+function getNpcActivity(npc) {
+  const hour = getSimHour();
+  const entry = getScheduleEntry(npc.id, hour);
+  return entry ? entry.activity : npc.noonAct;
+}
+
+function getNpcAreaId(npc) {
+  const hour = getSimHour();
+  const entry = getScheduleEntry(npc.id, hour);
+  return entry ? entry.areaId : npc.noonArea;
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let selectedId = 'townSquare';
+let hoveredId  = null;
+
+// ── Coastline ────────────────────────────────────────────────────────────────
+function buildOutline() {
+  const pts  = [];
+  const R    = 250;
+  const seed = [0.02,-0.04,0.06,-0.03,0.08,-0.05,0.03,-0.07,0.05,-0.02,
+                0.04,-0.06,0.07,-0.03,0.02,-0.05,0.06,-0.04,0.05,-0.02,
+                0.08,-0.06,0.03,-0.04];
+  for (let i = 0; i < 48; i++) {
+    const t = (i / 48) * Math.PI * 2;
+    let wobble = seed[i % seed.length] * 30;
+    if (Math.abs(t - Math.PI / 2) < 0.4)       wobble -= 18; // dock inlet
+    if (Math.abs(t - 3 * Math.PI / 2) < 0.3)   wobble += 14; // south headland
+    pts.push({ x: Math.cos(t) * (R + wobble), z: Math.sin(t) * (R + wobble) });
+  }
+  return pts;
+}
+
+function smoothPath(pts) {
+  const p = pts.map(pt => ({ x: pt.x, y: pt.z }));
+  let d = `M ${p[0].x.toFixed(2)} ${p[0].y.toFixed(2)}`;
+  for (let i = 0; i < p.length; i++) {
+    const p0 = p[(i - 1 + p.length) % p.length];
+    const p1 = p[i];
+    const p2 = p[(i + 1) % p.length];
+    const p3 = p[(i + 2) % p.length];
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+  return d + ' Z';
+}
+
+const COAST_D = smoothPath(buildOutline());
+
+// ── NPC dot positions — computed dynamically from schedule (CAD-438) ��────────
+
+// ── Path network ─────────────────────────────────────────────────────────────
+const PATHS = [
+  [[0,0],[-60,-40]], [[0,0],[60,-40]], [[0,0],[80,40]], [[0,0],[-80,40]],
+  [[0,0],[0,262]],   [[-80,40],[-180,80]], [[80,40],[180,120]],
+  [[-60,-40],[-100,-180]], [[60,-40],[0,-220]], [[-60,-40],[0,-220]],
+  [[-60,-40],[60,-40]],    [[-80,40],[80,40]], [[60,-40],[150,-80]],
+  [[5,-55],[40,-70]], [[5,-55],[-30,-70]], [[0,-220],[30,-200]],
+  [[0,262],[42,248]], [[80,40],[188,128]],
+];
+
+// ── Glyph shape SVG string ───────────────────────────────────────────────────
+function glyphSVG(kind, sz, fill, strokeColor, sw) {
+  const f = fill, s = strokeColor;
+  switch (kind) {
+    case 'civic':
+      return `<polygon points="0,${-(sz+2)} ${sz},0 ${-sz},0" fill="${f}" stroke="${s}" stroke-width="${sw}"/>` +
+             `<rect x="${-sz*0.8}" y="0" width="${sz*1.6}" height="${sz*0.9}" fill="${f}" stroke="${s}" stroke-width="${sw}"/>`;
+    case 'craft':
+      return `<rect x="${-sz}" y="${-sz}" width="${sz*2}" height="${sz*2}" fill="${f}" stroke="${s}" stroke-width="${sw}"/>` +
+             `<line x1="${-sz}" y1="0" x2="${sz}" y2="0" stroke="${s}" stroke-width="0.4"/>`;
+    case 'rural':
+      return `<polygon points="0,${-(sz+1.5)} ${sz+1},${sz-1} ${-(sz+1)},${sz-1}" fill="${f}" stroke="${s}" stroke-width="${sw}"/>`;
+    case 'wild':
+      return `<circle r="${sz}" fill="${f}" stroke="${s}" stroke-width="${sw}"/>` +
+             `<circle r="${sz*0.4}" fill="${s}" opacity="0.4"/>`;
+    case 'shore':
+      return `<path d="M ${-sz} 0 Q ${-sz/2} ${-sz} 0 0 Q ${sz/2} ${sz} ${sz} 0" fill="none" stroke="${s}" stroke-width="${sw+0.2}"/>` +
+             `<circle cy="${-sz*0.3}" r="1" fill="${s}"/>`;
+    default:
+      return `<circle r="${sz}" fill="${f}" stroke="${s}" stroke-width="${sw}"/>`;
+  }
+}
+
+// ── Build & render SVG ───────────────────────────────────────────────────────
+function buildSVG() {
+  // Forest stippling
+  const forest = Array.from({ length: 40 }, (_, i) => {
+    const a = (i * 0.717) % (Math.PI * 2);
+    const r = 25 + (i % 5) * 7;
+    return `<circle cx="${(180 + Math.cos(a) * r).toFixed(1)}" cy="${(120 + Math.sin(a) * r).toFixed(1)}" r="2.2" fill="#5a7a45" opacity="0.7"/>`;
+  }).join('');
+
+  // Farm furrows
+  const furrows = Array.from({ length: 6 }, (_, i) =>
+    `<line x1="-210" y1="${60 + i * 7}" x2="-150" y2="${60 + i * 7}" stroke="#6b8a4a" stroke-width="1" opacity="0.45"/>`
+  ).join('');
+
+  // Sea hatch contours
+  const seaRings = [290, 310, 335, 365].map((r, i) =>
+    `<circle cx="0" cy="0" r="${r}" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.6"${i % 2 ? ' stroke-dasharray="2 3"' : ''} filter="url(#ink-wobble)"/>`
+  ).join('');
+
+  // Topo rings at clifftops
+  const topo = [60, 45, 30, 18].map((r, i) =>
+    `<circle cx="-100" cy="-180" r="${r}" fill="none" stroke="rgba(74,50,20,0.35)" stroke-width="0.5"${i % 2 ? ' stroke-dasharray="3 2"' : ''} filter="url(#ink-wobble)"/>`
+  ).join('');
+
+  // Path network
+  const paths = PATHS.map(p =>
+    `<line x1="${p[0][0]}" y1="${p[0][1]}" x2="${p[1][0]}" y2="${p[1][1]}" stroke="#6b4a22" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.55" filter="url(#ink-wobble)"/>`
+  ).join('');
+
+  // NPC dots (live schedule positions — CAD-438)
+  const npcDots = NPCS.map((n, i) => {
+    const p = getNpcPosition(n, i);
+    return `<g transform="translate(${p.x.toFixed(1)},${p.z.toFixed(1)})">
+      <circle r="3.2" fill="rgba(44,26,10,0.35)" transform="translate(0.5,0.8)"/>
+      <circle r="2.8" fill="${n.accent}" stroke="#3a2610" stroke-width="0.5"/>
+    </g>`;
+  }).join('');
+
+  // Area glyphs (on top)
+  const glyphs = AREAS.map(a => {
+    const isSel = a.id === selectedId;
+    const isHov = a.id === hoveredId;
+    const sz    = isSel ? 7 : isHov ? 6 : 5;
+    const fill  = isSel ? ACCENT : '#faf2dd';
+    const ink   = '#3a2610';
+    const lop   = (isSel || isHov) ? 1 : 0.85;
+    return `<g class="area-glyph" data-id="${a.id}" transform="translate(${a.x},${a.z})">
+      ${isSel ? `<circle r="${sz + 5}" fill="none" stroke="${ACCENT}" stroke-width="1.2" opacity="0.8"/>` : ''}
+      ${glyphSVG(a.kind, sz, fill, ink, 0.9)}
+      <g transform="translate(0,${sz + 9})" opacity="${lop}">
+        <text text-anchor="middle" font-size="7.5" fill="#2d1d0a"
+          font-family="'Instrument Serif', Georgia, serif" font-style="italic"
+          style="paint-order:stroke;stroke:rgba(239,224,184,0.95);stroke-width:2.5;stroke-linejoin:round">
+          ${a.name}
+        </text>
+      </g>
+    </g>`;
+  }).join('');
+
+  // Compass rose
+  const compassLines = [0,45,90,135,180,225,270,315].map(deg => {
+    const rad = deg * Math.PI / 180;
+    return `<line x1="0" y1="0" x2="${(Math.sin(rad)*34).toFixed(2)}" y2="${(-Math.cos(rad)*34).toFixed(2)}" stroke="#8a6a3a" stroke-width="${deg % 90 === 0 ? '0.9' : '0.3'}"/>`;
+  }).join('');
+
+  document.getElementById('map-svg').innerHTML = `
+    <defs>
+      <filter id="ink-wobble">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4"/>
+        <feDisplacementMap in="SourceGraphic" scale="1.6"/>
+      </filter>
+      <filter id="parchment-grain">
+        <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="2"/>
+        <feColorMatrix values="0 0 0 0 0.35  0 0 0 0 0.25  0 0 0 0 0.15  0 0 0 0.14 0"/>
+        <feComposite in2="SourceGraphic" operator="in"/>
+      </filter>
+      <filter id="softGlow"><feGaussianBlur stdDeviation="2"/></filter>
+      <radialGradient id="seaGrad" cx="50%" cy="50%" r="75%">
+        <stop offset="0%"   stop-color="#9cbfb2"/>
+        <stop offset="60%"  stop-color="#7aa396"/>
+        <stop offset="100%" stop-color="#5a8578"/>
+      </radialGradient>
+      <radialGradient id="landGrad" cx="45%" cy="40%" r="70%">
+        <stop offset="0%"   stop-color="#efe0b8"/>
+        <stop offset="55%"  stop-color="#e5d09e"/>
+        <stop offset="100%" stop-color="#c9ae7b"/>
+      </radialGradient>
+      <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="4" stroke="rgba(74,50,20,0.08)" stroke-width="0.6"/>
+      </pattern>
+      <clipPath id="landClip"><path d="${COAST_D}"/></clipPath>
+    </defs>
+
+    <!-- Sea -->
+    <rect x="-310" y="-310" width="620" height="620" fill="url(#seaGrad)"/>
+    ${seaRings}
+
+    <!-- Island shadow + beach halo -->
+    <path d="${COAST_D}" transform="translate(4,6)" fill="rgba(44,26,10,0.25)" filter="url(#softGlow)"/>
+    <path d="${COAST_D}" fill="none" stroke="#eed9a8" stroke-width="12" stroke-linejoin="round" opacity="0.9"/>
+
+    <!-- Land fill + coastline ink -->
+    <path d="${COAST_D}" fill="url(#landGrad)" filter="url(#ink-wobble)"/>
+    <path d="${COAST_D}" fill="none" stroke="#4a321a" stroke-width="1.5" filter="url(#ink-wobble)"/>
+
+    <!-- Land interior: hatch, contours, features, paths -->
+    <g clip-path="url(#landClip)">
+      <rect x="-300" y="-300" width="600" height="600" fill="url(#hatch)"/>
+      ${topo}
+      <text x="-100" y="-188" font-size="7" fill="#4a321a" text-anchor="middle"
+        font-family="'JetBrains Mono', monospace" opacity="0.55">▲ 78m</text>
+      ${forest}
+      ${furrows}
+      <!-- Beach sand patches -->
+      <ellipse cx="0"  cy="-220" rx="35" ry="10" fill="#f4e3b0" opacity="0.8"/>
+      <ellipse cx="30" cy="-200" rx="22" ry="8"  fill="#f4e3b0" opacity="0.7"/>
+      <!-- Paths -->
+      ${paths}
+    </g>
+
+    <!-- NPC noon dots -->
+    ${npcDots}
+
+    <!-- Area glyphs (interactive) -->
+    ${glyphs}
+
+    <!-- Compass rose -->
+    <g transform="translate(240,240)">
+      <circle r="40" fill="rgba(60,40,16,0.05)" stroke="#8a6a3a" stroke-width="0.5"/>
+      <circle r="34" fill="none" stroke="#8a6a3a" stroke-width="0.3"/>
+      ${compassLines}
+      <polygon points="0,-36 4,-6 0,0 -4,-6" fill="#b68a4a" stroke="#6e4c20" stroke-width="0.4"/>
+      <polygon points="0,36 4,6 0,0 -4,6" fill="#4a321a"/>
+      <text y="-44" text-anchor="middle" font-size="9" fill="#4a321a"
+        font-family="'Instrument Serif', Georgia, serif" font-style="italic">N</text>
+    </g>
+
+    <!-- Title cartouche -->
+    <g transform="translate(-290,232)">
+      <rect x="0" y="0" width="164" height="58" rx="2"
+        fill="rgba(239,224,184,0.88)" stroke="#6b4a22" stroke-width="0.4" filter="url(#ink-wobble)"/>
+      <text x="82" y="20" text-anchor="middle" font-size="13"
+        font-family="'Instrument Serif', Georgia, serif" font-style="italic" fill="#3a2610">The Island</text>
+      <text x="82" y="35" text-anchor="middle" font-size="6"
+        font-family="'JetBrains Mono', monospace" fill="#6b4a22" letter-spacing="1.2">SURVEY · 1:400</text>
+      <text x="82" y="48" text-anchor="middle" font-size="5"
+        font-family="'JetBrains Mono', monospace" fill="#6b4a22" letter-spacing="1">DRAFT · GOLDEN-HOUR EDITION</text>
+    </g>
+
+    <!-- Parchment grain overlay -->
+    <rect x="-310" y="-310" width="620" height="620"
+      fill="rgba(0,0,0,0)" filter="url(#parchment-grain)" pointer-events="none"/>
+  `;
+
+  // Attach glyph events after each rebuild
+  document.querySelectorAll('.area-glyph').forEach(g => {
+    g.addEventListener('mouseenter', () => { hoveredId = g.dataset.id; render(); });
+    g.addEventListener('mouseleave', () => { hoveredId = null; render(); });
+    g.addEventListener('click',      () => { selectedId = g.dataset.id; render(); });
+  });
+}
+
+// ── Side panel ───────────────────────────────────────────────────────────────
+function buildPanel() {
+  const focusId = selectedId || hoveredId || 'townSquare';
+  const area    = AREAS.find(a => a.id === focusId) || AREAS[0];
+  const here    = NPCS.filter(n => getNpcAreaId(n) === area.id);
+  const kLabel  = KIND_LABELS[area.kind] || area.kind;
+  const coordX  = area.x >= 0 ? `+${area.x}` : String(area.x);
+  const coordZ  = area.z >= 0 ? `+${area.z}` : String(area.z);
+
+  const regularsHTML = here.length === 0
+    ? `<div class="atlas-empty">— quiet —</div>`
+    : `<ul class="atlas-here">${here.map(n =>
+        `<li>
+          <span class="atlas-here__dot" style="background:${n.accent}"></span>
+          <div class="atlas-here__body">
+            <div class="atlas-here__name">${n.name} <em>the ${n.role}</em></div>
+            <div class="atlas-here__act">${getNpcActivity(n)}</div>
+          </div>
+        </li>`).join('')}</ul>`;
+
+  const rosterHTML = NPCS.map(n =>
+    `<button class="atlas-roster__chip" data-area="${getNpcAreaId(n)}">
+      <span class="atlas-roster__dot" style="background:${n.accent}"></span>
+      <span class="atlas-roster__name">${n.name}</span>
+      <span class="atlas-roster__act">${getNpcActivity(n)}</span>
+    </button>`
+  ).join('');
+
+  document.getElementById('side-panel').innerHTML = `
+    <div class="atlas-meta">
+      <div class="atlas-meta__row">
+        <span class="atlas-meta__label">Coord</span>
+        <span class="atlas-meta__val">${coordX}, ${coordZ}</span>
+      </div>
+      <div class="atlas-meta__row">
+        <span class="atlas-meta__label">Region</span>
+        <span class="atlas-meta__val">${kLabel}</span>
+      </div>
+      <div class="atlas-meta__row">
+        <span class="atlas-meta__label">Time</span>
+        <span class="atlas-meta__val">${String(Math.floor(getSimHour())).padStart(2,'0')}:${String(Math.floor((getSimHour()%1)*60)).padStart(2,'0')}</span>
+      </div>
+    </div>
+
+    <div class="atlas-card">
+      <div class="atlas-card__kicker">Field Notes — ${kLabel}</div>
+      <h2 class="atlas-card__title">${area.name}</h2>
+      <p class="atlas-card__blurb">${area.blurb}</p>
+      <div class="atlas-card__subhead">
+        <span>Regulars</span>
+        <span class="atlas-card__count">${here.length}</span>
+      </div>
+      ${regularsHTML}
+    </div>
+
+    <div class="atlas-roster">
+      <div class="atlas-roster__head">Roster · all ${NPCS.length}</div>
+      <div class="atlas-roster__grid">${rosterHTML}</div>
+    </div>
+  `;
+
+  // Roster chip clicks
+  document.querySelectorAll('.atlas-roster__chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      selectedId = chip.dataset.area;
+      render();
+    });
+  });
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  buildSVG();
+  buildPanel();
+}
+
+// CAD-438: Animation loop — advance sim time and re-render every 2 seconds
+function tick(now) {
+  advanceSimTime(now);
+  render();
+  setTimeout(() => requestAnimationFrame(tick), 2000);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -38,8 +38,17 @@ let allGames: [GameDefinition] = [
         accentColor: "#4a9e5c"
     ),
     GameDefinition(
-        id: "island-2d",
+        id: "island",
         title: "Island",
+        subtitle: "Ghibli 3D island explorer",
+        category: .game,
+        entryFile: "index.html",
+        icon: "leaf.fill",
+        accentColor: "#4db87a"
+    ),
+    GameDefinition(
+        id: "island-2d",
+        title: "Island 2D",
         subtitle: "2D top-down adventure",
         category: .game,
         entryFile: "index.html",
