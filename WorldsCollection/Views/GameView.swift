@@ -46,7 +46,7 @@ final class GameViewController: UIViewController {
         buildWebView()
         buildBackButton()
         loadGame()
-        controllerBridge = ControllerBridge(webView: webView)
+        controllerBridge = ControllerBridge(webView: webView, gameId: game.id)
     }
 
     // MARK: - WebView setup

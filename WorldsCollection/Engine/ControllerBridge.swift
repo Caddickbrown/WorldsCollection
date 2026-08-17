@@ -5,7 +5,7 @@ import WebKit
 /// by injecting a minimal JS shim into the WKWebView.
 ///
 /// The Web Gamepad API already works natively in WKWebView on iOS 14.5+, so for
-/// games that already call navigator.getGamepads() (Island Voxel) this does nothing —
+/// games that already call navigator.getGamepads() (Island, Island Voxel) this does nothing —
 /// they will see the controller directly.
 ///
 /// For games that don't poll the Gamepad API (House, Pavilion, Island 2D), this
@@ -15,13 +15,18 @@ final class ControllerBridge {
 
     weak var webView: WKWebView?
     private var observation: NSObjectProtocol?
+    private let gameId: String
+
+    // Games that use navigator.getGamepads() natively — skip keyboard injection
+    private static let gamepadNativeGames: Set<String> = ["island", "island-voxel"]
 
     // Button → key mapping for games that use keyboard input
     private static let buttonKeyMap: [GCControllerButtonInput: (key: String, code: String)] = [:]
     // We use axis + button identifiers via profile snapshot instead
 
-    init(webView: WKWebView) {
+    init(webView: WKWebView, gameId: String = "") {
         self.webView = webView
+        self.gameId = gameId
         setupObservers()
         // Inject the shim for all active controllers
         GCController.controllers().forEach { injectShimIfNeeded(for: $0) }
@@ -46,11 +51,14 @@ final class ControllerBridge {
 
     /// The Web Gamepad API surfaces controllers natively on iOS 14.5+.
     /// We only need to wire up keyboard-event simulation for games that don't
-    /// use the Gamepad API at all (House, Pavilion).
+    /// use the Gamepad API at all (House, Pavilion, Island 2D).
     private func injectShimIfNeeded(for controller: GCController) {
         guard let wv = webView else { return }
 
         guard let profile = controller.extendedGamepad else { return }
+
+        // Skip keyboard injection for games that use navigator.getGamepads() natively
+        if Self.gamepadNativeGames.contains(gameId) { return }
 
         // D-pad / left stick → WASD
         func pressKey(_ key: String, down: Bool) {
