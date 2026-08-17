@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 
 // Try to import island bounds and height function from scene; fall back to defaults
-let ISLAND_BOUNDS, getHeight;
+let ISLAND_BOUNDS, getHeight, clampToIsland;
 try {
   const scene = await import('./scene.js');
   ISLAND_BOUNDS = scene.ISLAND_BOUNDS;
   getHeight = scene.getHeight;
+  clampToIsland = scene.clampToIsland;
 } catch {
   ISLAND_BOUNDS = { minX: -280, maxX: 280, minZ: -280, maxZ: 280 };
   getHeight = () => 0;
+  clampToIsland = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +180,10 @@ export class PlayerController {
 
   // CAD-440: Virtual joystick for mobile
   _setupVirtualJoystick(canvas) {
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    // Coarse-pointer check: touchscreen laptops driven by a mouse must NOT get
+    // the full-screen joystick zones (they swallow clicks)
+    const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+      window.matchMedia('(pointer: coarse)').matches;
     if (!isTouchDevice) return;
 
     // Create joystick container CSS
@@ -361,7 +366,7 @@ export class PlayerController {
       case 'KeyD': case 'ArrowRight': this.keys.right    = pressed; break;
       case 'ShiftLeft': case 'ShiftRight': this.keys.sprint = pressed; break;
       case 'Space':
-        if (this.miniGame && this.miniGame.active) { e.preventDefault(); break; }
+        if ((this.miniGame && this.miniGame.active) || this.inputBlocked?.()) { e.preventDefault(); break; }
         if (pressed && this.isOnGround) {
           this.velocityY    = this.JUMP_IMPULSE;
           this.isOnGround   = false;
@@ -375,8 +380,9 @@ export class PlayerController {
   }
 
   update(delta) {
-    // If a mini-game overlay is open, freeze player movement
-    if (this.miniGame && this.miniGame.active) {
+    // If a mini-game overlay is open (host can widen this via inputBlocked),
+    // freeze player movement
+    if ((this.miniGame && this.miniGame.active) || this.inputBlocked?.()) {
       // Still update camera so the world stays visible behind the overlay
       if (!this.indoorCamera) {
         const camGroundY = getHeight(this.player.position.x, this.player.position.z);
@@ -391,6 +397,41 @@ export class PlayerController {
 
     // Get camera forward direction projected onto XZ plane
     const forward = new THREE.Vector3();
+
+    // --- Gamepad input ---
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const gp of pads) {
+      if (!gp) continue;
+      const ax   = gp.axes[0] ?? 0; // left stick X
+      const az   = gp.axes[1] ?? 0; // left stick Y
+      const rx   = gp.axes[2] ?? 0; // right stick X
+      const ry   = gp.axes[3] ?? 0; // right stick Y
+      const dead = 0.15;
+      // Left stick → movement (OR with keyboard so both work simultaneously)
+      if (!this.keys.left)     this.keys.left     = ax < -dead;
+      if (!this.keys.right)    this.keys.right    = ax >  dead;
+      if (!this.keys.forward)  this.keys.forward  = az < -dead;
+      if (!this.keys.backward) this.keys.backward = az >  dead;
+      // Right stick → camera yaw/pitch
+      if (Math.abs(rx) > dead) this.yaw   -= rx * 0.04;
+      if (Math.abs(ry) > dead) this.pitch += ry * 0.02;
+      this.pitch = Math.max(-0.4, Math.min(0.6, this.pitch));
+      // Buttons: A(0)=jump  B(1)=sprint  X(2)=interact(E)  Y(3)=map(M)  L3(10)=sprint
+      if (gp.buttons[0]?.pressed && this.onGround) {
+        this.velocityY = this.jumpStrength;
+        this.onGround  = false;
+        this.jumpHeld  = true;
+      }
+      if (!this.keys.sprint) this.keys.sprint = !!(gp.buttons[1]?.pressed || gp.buttons[10]?.pressed);
+      if (gp.buttons[2]?.value > 0.5 && !this._gpInteractLast)
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', bubbles: true }));
+      this._gpInteractLast = gp.buttons[2]?.value > 0.5;
+      if (gp.buttons[3]?.value > 0.5 && !this._gpMapLast)
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyM', bubbles: true }));
+      this._gpMapLast = gp.buttons[3]?.value > 0.5;
+      break;
+    }
+
     this.camera.getWorldDirection(forward);
     forward.y = 0;
     forward.normalize();
@@ -437,6 +478,13 @@ export class PlayerController {
       this.player.position.y = groundY;
       this.velocityY = 0;
       this.isOnGround = true;
+    } else if (this.isOnGround && this.velocityY <= 0 &&
+               this.player.position.y - groundY < 0.4) {
+      // Step-down snap: walking downhill leaves the player a few cm above the
+      // receding terrain each frame; without this, isOnGround flickers false
+      // and jumping intermittently fails
+      this.player.position.y = groundY;
+      this.velocityY = 0;
     } else {
       this.isOnGround = false;
     }
@@ -445,6 +493,13 @@ export class PlayerController {
     const b = ISLAND_BOUNDS;
     this.player.position.x = Math.max(b.minX, Math.min(b.maxX, this.player.position.x));
     this.player.position.z = Math.max(b.minZ, Math.min(b.maxZ, this.player.position.z));
+    // The real edge: the coastline (a little into the shallows), not the
+    // square — the old square bounds let you stroll far out over open sea
+    if (clampToIsland) {
+      const [cx2, cz2] = clampToIsland(this.player.position.x, this.player.position.z);
+      this.player.position.x = cx2;
+      this.player.position.z = cz2;
+    }
 
     // --- Building collision ---
     for (const col of this.colliders) {
@@ -468,7 +523,9 @@ export class PlayerController {
       const camGroundY = getHeight(this.player.position.x, this.player.position.z);
       const camX = this.player.position.x + Math.sin(this.yaw) * this.cameraDistance * Math.cos(this.pitch);
       const camZ = this.player.position.z + Math.cos(this.yaw) * this.cameraDistance * Math.cos(this.pitch);
-      const camY = camGroundY + this.cameraHeight + this.cameraDistance * Math.sin(this.pitch) + bobOffset;
+      let camY = camGroundY + this.cameraHeight + this.cameraDistance * Math.sin(this.pitch) + bobOffset;
+      // Never let the camera sink into the terrain at its own position
+      camY = Math.max(camY, getHeight(camX, camZ) + 0.8);
 
       this.camera.position.set(camX, camY, camZ);
 
